@@ -1,0 +1,10 @@
+DROP RULE IF EXISTS audit_logs_no_delete ON audit_logs;
+DROP RULE IF EXISTS audit_logs_no_update ON audit_logs;
+DROP TABLE IF EXISTS consents;
+DROP TABLE IF EXISTS audit_logs;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS fhir_resource_history;
+DROP TABLE IF EXISTS fhir_resources;
+DROP TABLE IF EXISTS organizations;
+DROP EXTENSION IF EXISTS pgcrypto;
+DROP EXTENSION IF EXISTS "uuid-ossp";

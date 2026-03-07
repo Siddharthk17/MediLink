@@ -1,0 +1,12 @@
+DROP INDEX CONCURRENTLY IF EXISTS idx_fhir_resources_data_gin;
+DROP INDEX IF EXISTS idx_fhir_resources_type;
+DROP INDEX IF EXISTS idx_fhir_resources_patient_ref;
+DROP INDEX IF EXISTS idx_fhir_resources_type_patient;
+DROP INDEX IF EXISTS idx_fhir_history_resource;
+DROP INDEX IF EXISTS idx_audit_logs_user;
+DROP INDEX IF EXISTS idx_audit_logs_resource;
+DROP INDEX IF EXISTS idx_audit_logs_patient;
+DROP INDEX IF EXISTS idx_users_email_hash;
+DROP INDEX IF EXISTS idx_users_role;
+DROP INDEX IF EXISTS idx_consents_patient;
+DROP INDEX IF EXISTS idx_consents_provider;
