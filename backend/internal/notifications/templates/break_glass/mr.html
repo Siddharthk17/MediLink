@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html><body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+<h2 style="color:#dc2626;">⚠️ तुमच्या वैद्यकीय नोंदींमध्ये आणीबाणी प्रवेश</h2>
+<p>प्रिय {{.PatientName}},</p>
+<p><strong>{{.PhysicianName}}</strong> (<strong>{{.OrgName}}</strong>) यांनी <strong>{{.AccessTime}}</strong> वेळी आणीबाणी प्रवेशाद्वारे तुमच्या वैद्यकीय नोंदी पाहिल्या.</p>
+<div style="background:#fef2f2;padding:15px;border-left:4px solid #dc2626;margin:20px 0;">
+<strong>दिलेले कारण:</strong><br>{{.Reason}}
+</div>
+<p>हा प्रवेश अनधिकृत असल्यास, कृपया लगेच <a href="mailto:{{.SupportEmail}}">{{.SupportEmail}}</a> शी संपर्क साधा.</p>
+<p>— MediLink आरोग्य व्यासपीठ</p>
+</body></html>

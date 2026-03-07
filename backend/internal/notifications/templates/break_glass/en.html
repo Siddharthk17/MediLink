@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html><body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+<h2 style="color:#dc2626;">⚠️ Emergency Access to Your Medical Records</h2>
+<p>Dear {{.PatientName}},</p>
+<p><strong>{{.PhysicianName}}</strong> from <strong>{{.OrgName}}</strong> accessed your medical records at <strong>{{.AccessTime}}</strong> under emergency access provisions.</p>
+<div style="background:#fef2f2;padding:15px;border-left:4px solid #dc2626;margin:20px 0;">
+<strong>Reason provided:</strong><br>{{.Reason}}
+</div>
+<p>Emergency access is logged and monitored. If you believe this access was unauthorized, please contact MediLink support immediately at <a href="mailto:{{.SupportEmail}}">{{.SupportEmail}}</a>.</p>
+<p>— MediLink Health Platform</p>
+</body></html>

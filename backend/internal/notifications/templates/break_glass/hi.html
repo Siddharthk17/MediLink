@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html><body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+<h2 style="color:#dc2626;">⚠️ आपके मेडिकल रिकॉर्ड तक आपातकालीन पहुँच</h2>
+<p>प्रिय {{.PatientName}},</p>
+<p><strong>{{.PhysicianName}}</strong> (<strong>{{.OrgName}}</strong>) ने आपातकालीन पहुँच के तहत <strong>{{.AccessTime}}</strong> पर आपके मेडिकल रिकॉर्ड एक्सेस किए।</p>
+<div style="background:#fef2f2;padding:15px;border-left:4px solid #dc2626;margin:20px 0;">
+<strong>दिया गया कारण:</strong><br>{{.Reason}}
+</div>
+<p>यदि यह पहुँच अनधिकृत थी, तो कृपया तुरंत <a href="mailto:{{.SupportEmail}}">{{.SupportEmail}}</a> पर संपर्क करें।</p>
+<p>— MediLink स्वास्थ्य प्लेटफ़ॉर्म</p>
+</body></html>

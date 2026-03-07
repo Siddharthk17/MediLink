@@ -1,4 +1,4 @@
-.PHONY: run test migrate lint build clean
+.PHONY: run test test-unit test-integration migrate lint build clean
 
 # Start all services
 run:
@@ -6,45 +6,56 @@ run:
 
 # Run API only (assumes postgres and redis already running)
 run-api:
-	go run ./cmd/api/main.go
+	cd backend && go run ./cmd/api/main.go
 
 # Run all tests with race detector
-test:
-	go test -race -v -count=1 ./...
+test: test-unit
+
+# Run unit tests only
+test-unit:
+	cd backend && go test -race -v -count=1 ./tests/unit/...
+
+# Run integration tests (requires live DB, Redis, ES)
+test-integration:
+	cd backend && go test -race -v -count=1 ./tests/integration/...
+
+# Run all tests (unit + source packages)
+test-all:
+	cd backend && go test -race -v -count=1 ./...
 
 # Run tests with coverage
 test-cover:
-	go test -race -coverprofile=coverage.out ./...
-	go tool cover -html=coverage.out -o coverage.html
+	cd backend && go test -race -coverprofile=coverage.out ./...
+	cd backend && go tool cover -html=coverage.out -o coverage.html
 
 # Apply migrations
 migrate-up:
-	migrate -path migrations -database "$(DATABASE_URL)" up
+	cd backend && migrate -path migrations -database "$(DATABASE_URL)" up
 
 # Roll back one migration
 migrate-down:
-	migrate -path migrations -database "$(DATABASE_URL)" down 1
+	cd backend && migrate -path migrations -database "$(DATABASE_URL)" down 1
 
 # Roll back all migrations
 migrate-reset:
-	migrate -path migrations -database "$(DATABASE_URL)" drop -f
+	cd backend && migrate -path migrations -database "$(DATABASE_URL)" drop -f
 
 # Lint
 lint:
-	golangci-lint run ./...
+	cd backend && golangci-lint run ./...
 
 # Security scan
 security:
-	gosec ./...
+	cd backend && gosec ./...
 
 # Build binaries
 build:
-	CGO_ENABLED=0 go build -o bin/medilink-api ./cmd/api
-	CGO_ENABLED=0 go build -o bin/medilink-worker ./cmd/worker
+	cd backend && CGO_ENABLED=0 go build -o ../bin/medilink-api ./cmd/api
+	cd backend && CGO_ENABLED=0 go build -o ../bin/medilink-worker ./cmd/worker
 
 # Clean
 clean:
-	rm -rf bin/ coverage.out coverage.html
+	rm -rf bin/ backend/coverage.out backend/coverage.html
 
 # Install dev tools
 tools:
