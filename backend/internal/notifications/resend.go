@@ -206,3 +206,21 @@ func (s *ResendEmailService) SendAccountLocked(ctx context.Context, toEmail, ful
 	}
 	return s.sendEmail(ctx, toEmail, "MediLink Account Security Alert", html)
 }
+
+func (s *ResendEmailService) SendDocumentProcessingComplete(ctx context.Context, toEmail, fullName, jobID string) error {
+	s.logger.Info().Str("job_id", jobID).Str("email", toEmail).Msg("document processing complete notification")
+	return s.sendEmail(ctx, toEmail, "MediLink - Lab Report Processed",
+		fmt.Sprintf("<p>Hello %s,</p><p>Your lab report (Job ID: %s) has been processed successfully. You can view the results in your MediLink dashboard.</p>", fullName, jobID))
+}
+
+func (s *ResendEmailService) SendDocumentProcessingFailed(ctx context.Context, toEmail, fullName, jobID, reason string) error {
+	s.logger.Warn().Str("job_id", jobID).Str("email", toEmail).Str("reason", reason).Msg("document processing failed notification")
+	return s.sendEmail(ctx, toEmail, "MediLink - Lab Report Processing Issue",
+		fmt.Sprintf("<p>Hello %s,</p><p>We encountered an issue processing your lab report (Job ID: %s). Reason: %s. Please try re-uploading or contact support.</p>", fullName, jobID, reason))
+}
+
+func (s *ResendEmailService) SendDocumentNeedsReview(ctx context.Context, toEmail, fullName, jobID string) error {
+	s.logger.Info().Str("job_id", jobID).Str("email", toEmail).Msg("document needs manual review notification")
+	return s.sendEmail(ctx, toEmail, "MediLink - Lab Report Needs Review",
+		fmt.Sprintf("<p>Hello %s,</p><p>Your lab report (Job ID: %s) has been partially processed and requires manual review. A clinician will review it shortly.</p>", fullName, jobID))
+}

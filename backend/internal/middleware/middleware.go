@@ -7,7 +7,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 )
 
 // RequestIDKey is the context key for the request ID.
@@ -121,7 +120,3 @@ func GetUserAgent(c *gin.Context) string {
 	return c.Request.UserAgent()
 }
 
-func init() {
-	// This is safe — it just suppresses the gin startup log.
-	_ = log.Logger
-}

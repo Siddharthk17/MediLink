@@ -27,3 +27,5 @@ vendor/
 
 # Temp
 tmp/
+*.env
+*.out

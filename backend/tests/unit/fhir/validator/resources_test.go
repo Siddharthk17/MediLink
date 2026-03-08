@@ -11,9 +11,7 @@ import (
 	"github.com/Siddharthk17/MediLink/internal/fhir/validator"
 )
 
-// ---------------------------------------------------------------------------
 // Practitioner
-// ---------------------------------------------------------------------------
 
 func TestValidatePractitioner_Valid(t *testing.T) {
 	v := validator.NewFHIRValidator()
@@ -41,9 +39,7 @@ func TestValidatePractitioner_MissingFamily(t *testing.T) {
 	assert.Equal(t, 400, err.StatusCode)
 }
 
-// ---------------------------------------------------------------------------
 // Organization
-// ---------------------------------------------------------------------------
 
 func TestValidateOrganization_Valid(t *testing.T) {
 	v := validator.NewFHIRValidator()
@@ -80,9 +76,7 @@ func TestValidateOrganization_InvalidType(t *testing.T) {
 	assert.Equal(t, 400, err.StatusCode)
 }
 
-// ---------------------------------------------------------------------------
 // Encounter
-// ---------------------------------------------------------------------------
 
 func TestValidateEncounter_Valid(t *testing.T) {
 	v := validator.NewFHIRValidator()
@@ -143,9 +137,7 @@ func TestValidateEncounter_PeriodEndBeforeStart(t *testing.T) {
 	assert.Equal(t, 400, err.StatusCode)
 }
 
-// ---------------------------------------------------------------------------
 // Condition
-// ---------------------------------------------------------------------------
 
 func TestValidateCondition_Valid(t *testing.T) {
 	v := validator.NewFHIRValidator()
@@ -182,9 +174,7 @@ func TestValidateCondition_ActiveWithAbatement(t *testing.T) {
 	assert.Equal(t, 400, err.StatusCode)
 }
 
-// ---------------------------------------------------------------------------
 // MedicationRequest
-// ---------------------------------------------------------------------------
 
 func TestValidateMedicationRequest_Valid(t *testing.T) {
 	v := validator.NewFHIRValidator()
@@ -221,9 +211,7 @@ func TestValidateMedicationRequest_MissingIntent(t *testing.T) {
 	assert.Equal(t, 400, err.StatusCode)
 }
 
-// ---------------------------------------------------------------------------
 // Observation
-// ---------------------------------------------------------------------------
 
 func TestValidateObservation_Valid(t *testing.T) {
 	v := validator.NewFHIRValidator()
@@ -235,7 +223,7 @@ func TestValidateObservation_Valid(t *testing.T) {
 
 func TestValidateObservation_MissingStatus(t *testing.T) {
 	v := validator.NewFHIRValidator()
-	data := json.RawMessage(`{"resourceType":"Observation","code":{"coding":[{"system":"http://loinc.org","code":"4548-4"}]},"subject":{"reference":"Patient/test-id"},"effectiveDateTime":"2024-01-15T08:00:00+05:30"}`)
+	data := json.RawMessage(`{"resourceType":"Observation","code":{"coding":[{"system":"http://loinc.org","code":"4548-4"}]},"subject":{"reference":"Patient/test-id"},"effectiveDateTime":"2024-01-15T08:00:00+05:30","valueQuantity":{"value":7.2,"unit":"%"}}`)
 
 	err := v.ValidateObservation(data, "")
 	assert.NotNil(t, err)
@@ -244,7 +232,7 @@ func TestValidateObservation_MissingStatus(t *testing.T) {
 
 func TestValidateObservation_MissingCode(t *testing.T) {
 	v := validator.NewFHIRValidator()
-	data := json.RawMessage(`{"resourceType":"Observation","status":"final","subject":{"reference":"Patient/test-id"},"effectiveDateTime":"2024-01-15T08:00:00+05:30"}`)
+	data := json.RawMessage(`{"resourceType":"Observation","status":"final","subject":{"reference":"Patient/test-id"},"effectiveDateTime":"2024-01-15T08:00:00+05:30","valueString":"normal"}`)
 
 	err := v.ValidateObservation(data, "")
 	assert.NotNil(t, err)
@@ -253,7 +241,7 @@ func TestValidateObservation_MissingCode(t *testing.T) {
 
 func TestValidateObservation_MissingEffective(t *testing.T) {
 	v := validator.NewFHIRValidator()
-	data := json.RawMessage(`{"resourceType":"Observation","status":"final","code":{"coding":[{"system":"http://loinc.org","code":"4548-4"}]},"subject":{"reference":"Patient/test-id"}}`)
+	data := json.RawMessage(`{"resourceType":"Observation","status":"final","code":{"coding":[{"system":"http://loinc.org","code":"4548-4"}]},"subject":{"reference":"Patient/test-id"},"valueQuantity":{"value":7.2,"unit":"%"}}`)
 
 	err := v.ValidateObservation(data, "")
 	assert.NotNil(t, err)
@@ -262,16 +250,49 @@ func TestValidateObservation_MissingEffective(t *testing.T) {
 
 func TestValidateObservation_InvalidInterpretation(t *testing.T) {
 	v := validator.NewFHIRValidator()
-	data := json.RawMessage(`{"resourceType":"Observation","status":"final","code":{"coding":[{"system":"http://loinc.org","code":"4548-4"}]},"subject":{"reference":"Patient/test-id"},"effectiveDateTime":"2024-01-15T08:00:00+05:30","interpretation":[{"coding":[{"code":"INVALID"}]}]}`)
+	data := json.RawMessage(`{"resourceType":"Observation","status":"final","code":{"coding":[{"system":"http://loinc.org","code":"4548-4"}]},"subject":{"reference":"Patient/test-id"},"effectiveDateTime":"2024-01-15T08:00:00+05:30","valueQuantity":{"value":7.2,"unit":"%"},"interpretation":[{"coding":[{"code":"INVALID"}]}]}`)
 
 	err := v.ValidateObservation(data, "")
 	assert.NotNil(t, err)
 	assert.Equal(t, 400, err.StatusCode)
 }
 
-// ---------------------------------------------------------------------------
+func TestValidateObservation_ValidWithDataAbsentReason(t *testing.T) {
+	v := validator.NewFHIRValidator()
+	data := json.RawMessage(`{"resourceType":"Observation","status":"final","code":{"coding":[{"system":"http://loinc.org","code":"4548-4"}]},"subject":{"reference":"Patient/test-id"},"effectiveDateTime":"2024-01-15T08:00:00+05:30","dataAbsentReason":{"coding":[{"system":"http://terminology.hl7.org/CodeSystem/data-absent-reason","code":"unknown"}]}}`)
+
+	err := v.ValidateObservation(data, "")
+	assert.Nil(t, err)
+}
+
+func TestValidateObservation_MissingValueAndDataAbsentReason(t *testing.T) {
+	v := validator.NewFHIRValidator()
+	data := json.RawMessage(`{"resourceType":"Observation","status":"final","code":{"coding":[{"system":"http://loinc.org","code":"4548-4"}]},"subject":{"reference":"Patient/test-id"},"effectiveDateTime":"2024-01-15T08:00:00+05:30"}`)
+
+	err := v.ValidateObservation(data, "")
+	assert.NotNil(t, err)
+	assert.Equal(t, 400, err.StatusCode)
+}
+
+func TestValidateObservation_BothValueAndDataAbsentReason(t *testing.T) {
+	v := validator.NewFHIRValidator()
+	data := json.RawMessage(`{"resourceType":"Observation","status":"final","code":{"coding":[{"system":"http://loinc.org","code":"4548-4"}]},"subject":{"reference":"Patient/test-id"},"effectiveDateTime":"2024-01-15T08:00:00+05:30","valueQuantity":{"value":7.2,"unit":"%"},"dataAbsentReason":{"coding":[{"system":"http://terminology.hl7.org/CodeSystem/data-absent-reason","code":"unknown"}]}}`)
+
+	err := v.ValidateObservation(data, "")
+	assert.NotNil(t, err)
+	assert.Equal(t, 400, err.StatusCode)
+}
+
+func TestValidateObservation_MultipleValues(t *testing.T) {
+	v := validator.NewFHIRValidator()
+	data := json.RawMessage(`{"resourceType":"Observation","status":"final","code":{"coding":[{"system":"http://loinc.org","code":"4548-4"}]},"subject":{"reference":"Patient/test-id"},"effectiveDateTime":"2024-01-15T08:00:00+05:30","valueQuantity":{"value":7.2,"unit":"%"},"valueString":"normal"}`)
+
+	err := v.ValidateObservation(data, "")
+	assert.NotNil(t, err)
+	assert.Equal(t, 400, err.StatusCode)
+}
+
 // DiagnosticReport
-// ---------------------------------------------------------------------------
 
 func TestValidateDiagnosticReport_Valid(t *testing.T) {
 	v := validator.NewFHIRValidator()
@@ -308,9 +329,7 @@ func TestValidateDiagnosticReport_InvalidResultRef(t *testing.T) {
 	assert.Equal(t, 400, err.StatusCode)
 }
 
-// ---------------------------------------------------------------------------
 // AllergyIntolerance
-// ---------------------------------------------------------------------------
 
 func TestValidateAllergyIntolerance_Valid(t *testing.T) {
 	v := validator.NewFHIRValidator()
@@ -347,9 +366,7 @@ func TestValidateAllergyIntolerance_InvalidCategory(t *testing.T) {
 	assert.Equal(t, 400, err.StatusCode)
 }
 
-// ---------------------------------------------------------------------------
 // Immunization
-// ---------------------------------------------------------------------------
 
 func TestValidateImmunization_Valid(t *testing.T) {
 	v := validator.NewFHIRValidator()

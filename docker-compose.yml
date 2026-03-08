@@ -16,6 +16,12 @@ services:
       - APP_ENV=development
       - LOG_LEVEL=debug
       - GIN_MODE=debug
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=MediLink
+      - MINIO_SECRET_KEY=MediLink_minio_dev
+      - MINIO_BUCKET=medilink-lab-reports
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=llama3.1
     depends_on:
       postgres:
         condition: service_healthy
@@ -44,8 +50,16 @@ services:
       - DATABASE_URL=postgres://MediLink:MediLink_dev@postgres:5432/MediLink?sslmode=disable
       - REDIS_URL=redis://redis:6379
       - APP_ENV=development
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=MediLink
+      - MINIO_SECRET_KEY=MediLink_minio_dev
+      - MINIO_BUCKET=medilink-lab-reports
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=llama3.1
     depends_on:
       - api
+      - minio
+      - redis
     restart: unless-stopped
 
   postgres:
@@ -145,6 +159,27 @@ services:
     depends_on:
       - redis
 
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set myminio http://minio:9000 MediLink MediLink_minio_dev;
+      /usr/bin/mc mb myminio/medilink-lab-reports;
+      /usr/bin/mc anonymous set private myminio/medilink-lab-reports;
+      exit 0;
+      "
+    restart: on-failure
+
   nginx:
     image: nginx:alpine
     volumes:
@@ -161,3 +196,4 @@ volumes:
   minio_data:
   prometheus_data:
   grafana_data:
+  ollama_data:

@@ -7,9 +7,17 @@ import (
 	"time"
 
 	"github.com/Siddharthk17/MediLink/internal/audit"
+	"github.com/Siddharthk17/MediLink/internal/notifications"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 )
+
+// UserLookup retrieves basic contact info for notification purposes.
+type UserLookup interface {
+	GetUserContactInfo(ctx context.Context, userID uuid.UUID) (email, displayName string, err error)
+}
 
 // Valid FHIR resource types that can appear in consent scope.
 var validScopeTypes = map[string]bool{
@@ -69,15 +77,26 @@ type consentEngine struct {
 	cache  *ConsentCache
 	audit  audit.AuditLogger
 	logger zerolog.Logger
+	db     *sqlx.DB
+	email  notifications.EmailService
+	users  UserLookup
+	rdb    *redis.Client
 }
 
-func NewConsentEngine(repo ConsentRepository, cache *ConsentCache, auditLogger audit.AuditLogger, logger zerolog.Logger) ConsentEngine {
-	return &consentEngine{
+func NewConsentEngine(repo ConsentRepository, cache *ConsentCache, auditLogger audit.AuditLogger, logger zerolog.Logger, emailSvc notifications.EmailService, users UserLookup, rdb *redis.Client, db ...*sqlx.DB) ConsentEngine {
+	e := &consentEngine{
 		repo:   repo,
 		cache:  cache,
 		audit:  auditLogger,
 		logger: logger,
+		email:  emailSvc,
+		users:  users,
+		rdb:    rdb,
 	}
+	if len(db) > 0 {
+		e.db = db[0]
+	}
+	return e
 }
 
 func (e *consentEngine) CheckConsent(ctx context.Context, providerID, patientFHIRID, resourceType string) (bool, error) {
@@ -169,6 +188,18 @@ func (e *consentEngine) GrantConsent(ctx context.Context, req GrantConsentReques
 	// Cannot grant consent to yourself
 	if patientUUID == providerUUID {
 		return nil, fmt.Errorf("cannot grant consent to yourself")
+	}
+
+	// Validate provider is an active physician
+	if e.db != nil {
+		var role string
+		err := e.db.GetContext(ctx, &role, "SELECT role FROM users WHERE id = $1 AND status = 'active' AND deleted_at IS NULL", req.ProviderUserID)
+		if err != nil {
+			return nil, fmt.Errorf("provider not found")
+		}
+		if role != "physician" {
+			return nil, fmt.Errorf("provider must be a physician")
+		}
 	}
 
 	// Validate scope
@@ -325,6 +356,22 @@ func (e *consentEngine) RecordBreakGlass(ctx context.Context, req BreakGlassRequ
 		return nil, fmt.Errorf("break-glass reason must be at least 20 characters")
 	}
 
+	// Rate limit: max 3 break-glass accesses per physician per 24 hours
+	if e.rdb != nil {
+		key := fmt.Sprintf("breakglass:%s:count", physicianUserID)
+		count, err := e.rdb.Incr(ctx, key).Result()
+		if err != nil {
+			return nil, fmt.Errorf("rate limit check failed: %w", err)
+		}
+		if count == 1 {
+			e.rdb.Expire(ctx, key, 24*time.Hour)
+		}
+		if count > 3 {
+			e.rdb.Decr(ctx, key)
+			return nil, fmt.Errorf("break-glass rate limit exceeded: maximum 3 emergency accesses per 24 hours")
+		}
+	}
+
 	// Find patient user ID from FHIR ID
 	patientUserID, err := e.repo.GetUserIDByFHIRPatientID(ctx, req.PatientFHIRID)
 	if err != nil {
@@ -361,6 +408,34 @@ func (e *consentEngine) RecordBreakGlass(ctx context.Context, req BreakGlassRequ
 		Success:      true,
 		StatusCode:   201,
 	})
+
+	// Fire-and-forget patient email notification
+	if e.email != nil && e.users != nil {
+		go func() {
+			bgCtx := context.Background()
+			patientEmail, patientName, lookupErr := e.users.GetUserContactInfo(bgCtx, patientUserID)
+			if lookupErr != nil {
+				e.logger.Warn().Err(lookupErr).Str("patientID", patientUserID.String()).
+					Msg("failed to get patient info for break-glass notification")
+				return
+			}
+			_, physicianName, lookupErr := e.users.GetUserContactInfo(bgCtx, physicianUUID)
+			if lookupErr != nil {
+				e.logger.Warn().Err(lookupErr).Str("physicianID", physicianUserID).
+					Msg("failed to get physician info for break-glass notification")
+				return
+			}
+			if sendErr := e.email.SendBreakGlassNotification(bgCtx, notifications.BreakGlassNotification{
+				PatientEmail:  patientEmail,
+				PatientName:   patientName,
+				PhysicianName: physicianName,
+				AccessTime:    time.Now(),
+				Reason:        req.Reason,
+			}); sendErr != nil {
+				e.logger.Warn().Err(sendErr).Msg("failed to send break-glass notification email")
+			}
+		}()
+	}
 
 	return consent, nil
 }

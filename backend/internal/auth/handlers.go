@@ -92,7 +92,11 @@ func (h *AuthHandler) VerifyTOTP(c *gin.Context) {
 	oldJTI := c.GetString(RequestJTIKey)
 	resp, err := h.service.VerifyTOTP(c.Request.Context(), userID, req.Code, oldJTI, c.ClientIP(), c.Request.UserAgent())
 	if err != nil {
-		c.JSON(mapErrorToStatus(err), operationOutcome("login", err.Error()))
+		status := mapErrorToStatus(err)
+		if status == http.StatusTooManyRequests {
+			c.Header("Retry-After", "1800")
+		}
+		c.JSON(status, operationOutcome("login", err.Error()))
 		return
 	}
 
@@ -218,9 +222,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Password changed successfully"})
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 func operationOutcome(code, diagnostics string) gin.H {
 	return gin.H{

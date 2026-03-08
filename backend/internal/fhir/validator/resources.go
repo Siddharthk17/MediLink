@@ -11,9 +11,7 @@ import (
 	fhirerrors "github.com/Siddharthk17/MediLink/pkg/errors"
 )
 
-// ---------------------------------------------------------------------------
 // Helper functions
-// ---------------------------------------------------------------------------
 
 func extractString(m map[string]interface{}, key string) string {
 	v, ok := m[key]
@@ -94,9 +92,7 @@ func parseDateTime(s string) (time.Time, error) {
 	return time.Parse("2006-01-02", s)
 }
 
-// ---------------------------------------------------------------------------
 // 1. ValidatePractitioner
-// ---------------------------------------------------------------------------
 
 func (v *FHIRValidator) ValidatePractitioner(data json.RawMessage, urlID string) *fhirerrors.FHIRError {
 	var m map[string]interface{}
@@ -182,9 +178,7 @@ func (v *FHIRValidator) ValidatePractitioner(data json.RawMessage, urlID string)
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // 2. ValidateOrganization
-// ---------------------------------------------------------------------------
 
 func (v *FHIRValidator) ValidateOrganization(data json.RawMessage, urlID string) *fhirerrors.FHIRError {
 	var m map[string]interface{}
@@ -257,9 +251,7 @@ func (v *FHIRValidator) ValidateOrganization(data json.RawMessage, urlID string)
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // 3. ValidateEncounter
-// ---------------------------------------------------------------------------
 
 func (v *FHIRValidator) ValidateEncounter(data json.RawMessage, urlID string) *fhirerrors.FHIRError {
 	var m map[string]interface{}
@@ -397,9 +389,7 @@ func (v *FHIRValidator) ValidateEncounter(data json.RawMessage, urlID string) *f
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // 4. ValidateCondition
-// ---------------------------------------------------------------------------
 
 func (v *FHIRValidator) ValidateCondition(data json.RawMessage, urlID string) *fhirerrors.FHIRError {
 	var m map[string]interface{}
@@ -543,9 +533,7 @@ func (v *FHIRValidator) ValidateCondition(data json.RawMessage, urlID string) *f
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // 5. ValidateMedicationRequest
-// ---------------------------------------------------------------------------
 
 func (v *FHIRValidator) ValidateMedicationRequest(data json.RawMessage, urlID string) *fhirerrors.FHIRError {
 	var m map[string]interface{}
@@ -703,9 +691,7 @@ func (v *FHIRValidator) ValidateMedicationRequest(data json.RawMessage, urlID st
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // 6. ValidateObservation
-// ---------------------------------------------------------------------------
 
 func (v *FHIRValidator) ValidateObservation(data json.RawMessage, urlID string) *fhirerrors.FHIRError {
 	var m map[string]interface{}
@@ -866,15 +852,50 @@ func (v *FHIRValidator) ValidateObservation(data json.RawMessage, urlID string) 
 		}
 	}
 
+	// FHIR R4: Observation must have exactly one value[x] OR a dataAbsentReason, not both
+	valueFields := []string{
+		"valueQuantity", "valueCodeableConcept", "valueString", "valueBoolean",
+		"valueInteger", "valueRange", "valueRatio", "valueSampledData",
+		"valueTime", "valueDateTime", "valuePeriod",
+	}
+	valueCount := 0
+	for _, field := range valueFields {
+		if _, ok := m[field]; ok {
+			valueCount++
+		}
+	}
+	_, hasDataAbsentReason := m["dataAbsentReason"]
+
+	if valueCount == 0 && !hasDataAbsentReason {
+		issues = append(issues, fhirerrors.Issue{
+			Severity:   fhirerrors.SeverityError,
+			Code:       fhirerrors.CodeInvalid,
+			Details:    &fhirerrors.IssueDetail{Text: "Observation: must have either a value[x] or a dataAbsentReason"},
+			Expression: []string{"Observation.value[x]"},
+		})
+	} else if valueCount > 0 && hasDataAbsentReason {
+		issues = append(issues, fhirerrors.Issue{
+			Severity:   fhirerrors.SeverityError,
+			Code:       fhirerrors.CodeInvalid,
+			Details:    &fhirerrors.IssueDetail{Text: "Observation: cannot have both a value[x] and a dataAbsentReason"},
+			Expression: []string{"Observation.value[x]"},
+		})
+	} else if valueCount > 1 {
+		issues = append(issues, fhirerrors.Issue{
+			Severity:   fhirerrors.SeverityError,
+			Code:       fhirerrors.CodeInvalid,
+			Details:    &fhirerrors.IssueDetail{Text: "Observation: must have at most one value[x] element"},
+			Expression: []string{"Observation.value[x]"},
+		})
+	}
+
 	if len(issues) > 0 {
 		return fhirerrors.NewMultiIssueError(http.StatusBadRequest, issues)
 	}
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // 7. ValidateDiagnosticReport
-// ---------------------------------------------------------------------------
 
 var observationRefPattern = regexp.MustCompile(`^Observation/[A-Za-z0-9\-\.]+$`)
 
@@ -1002,9 +1023,7 @@ func (v *FHIRValidator) ValidateDiagnosticReport(data json.RawMessage, urlID str
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // 8. ValidateAllergyIntolerance
-// ---------------------------------------------------------------------------
 
 func (v *FHIRValidator) ValidateAllergyIntolerance(data json.RawMessage, urlID string) *fhirerrors.FHIRError {
 	var m map[string]interface{}
@@ -1151,9 +1170,7 @@ func (v *FHIRValidator) ValidateAllergyIntolerance(data json.RawMessage, urlID s
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // 9. ValidateImmunization
-// ---------------------------------------------------------------------------
 
 func (v *FHIRValidator) ValidateImmunization(data json.RawMessage, urlID string) *fhirerrors.FHIRError {
 	var m map[string]interface{}

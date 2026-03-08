@@ -251,9 +251,7 @@ func parsePagination(c *gin.Context) (count, offset int) {
 	return
 }
 
-// ---------------------------------------------------------------------------
 // Search param parsers
-// ---------------------------------------------------------------------------
 
 // PractitionerSearchParser extracts Practitioner search parameters from a request.
 func PractitionerSearchParser(c *gin.Context) ([]string, []interface{}, int, int, int) {

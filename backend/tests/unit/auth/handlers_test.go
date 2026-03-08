@@ -35,9 +35,7 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
-// ---------------------------------------------------------------------------
 // Fake SQL driver (avoids external mock-db dependency)
-// ---------------------------------------------------------------------------
 
 var registerDriverOnce sync.Once
 
@@ -80,9 +78,7 @@ func (r *fakeRows) Columns() []string              { return []string{"id"} }
 func (r *fakeRows) Close() error                   { return nil }
 func (r *fakeRows) Next([]driver.Value) error      { return io.EOF }
 
-// ---------------------------------------------------------------------------
 // Mock AuthRepository
-// ---------------------------------------------------------------------------
 
 type mockRepo struct {
 	createUserFn               func(ctx context.Context, user *auth.User) error
@@ -150,9 +146,7 @@ func (m *mockRepo) CountRecentIPAttempts(ctx context.Context, ip string, since t
 }
 func (m *mockRepo) ClearFailedAttempts(context.Context, string) error { return nil }
 
-// ---------------------------------------------------------------------------
 // Mock auth.JWTService
-// ---------------------------------------------------------------------------
 
 type mockJWT struct {
 	generateAccessTokenFn  func(userID, role, orgID string, totpVerified bool) (string, string, error)
@@ -200,9 +194,7 @@ func (m *mockJWT) IsBlacklisted(ctx context.Context, jti string) (bool, error) {
 	return false, nil
 }
 
-// ---------------------------------------------------------------------------
 // Mock auth.TOTPService
-// ---------------------------------------------------------------------------
 
 type mockTOTP struct {
 	validateCodeFn func(secret, code string) bool
@@ -222,18 +214,14 @@ func (m *mockTOTP) GenerateBackupCodes() ([]string, []string, error) {
 }
 func (m *mockTOTP) ValidateBackupCode(string, []string) (int, bool) { return -1, false }
 
-// ---------------------------------------------------------------------------
 // Mock OTPService
-// ---------------------------------------------------------------------------
 
 type mockOTP struct{}
 
 func (m *mockOTP) GenerateOTP() (string, string, error) { return "123456", "hash", nil }
 func (m *mockOTP) HashOTP(code string) string            { return "hashed-" + code }
 
-// ---------------------------------------------------------------------------
 // Mock Encryptor (identity — returns input unchanged)
-// ---------------------------------------------------------------------------
 
 type mockEncryptor struct{}
 
@@ -242,9 +230,7 @@ func (m *mockEncryptor) Decrypt(c []byte) ([]byte, error)    { return c, nil }
 func (m *mockEncryptor) EncryptString(s string) ([]byte, error) { return []byte(s), nil }
 func (m *mockEncryptor) DecryptString(b []byte) (string, error) { return string(b), nil }
 
-// ---------------------------------------------------------------------------
 // Mock EmailService
-// ---------------------------------------------------------------------------
 
 type mockEmailSvc struct{}
 
@@ -265,10 +251,17 @@ func (m *mockEmailSvc) SendPhysicianApproved(context.Context, string, string) er
 func (m *mockEmailSvc) SendAccountLocked(context.Context, string, string, time.Time) error {
 	return nil
 }
+func (m *mockEmailSvc) SendDocumentProcessingComplete(context.Context, string, string, string) error {
+	return nil
+}
+func (m *mockEmailSvc) SendDocumentProcessingFailed(context.Context, string, string, string, string) error {
+	return nil
+}
+func (m *mockEmailSvc) SendDocumentNeedsReview(context.Context, string, string, string) error {
+	return nil
+}
 
-// ---------------------------------------------------------------------------
 // Mock AuditLogger
-// ---------------------------------------------------------------------------
 
 type mockAuditLogger struct{}
 
@@ -276,9 +269,7 @@ func (m *mockAuditLogger) Log(context.Context, audit.AuditEntry) error { return 
 func (m *mockAuditLogger) LogAsync(audit.AuditEntry)                    {}
 func (m *mockAuditLogger) Close()                                       {}
 
-// ---------------------------------------------------------------------------
 // Test harness
-// ---------------------------------------------------------------------------
 
 type testHarness struct {
 	repo    *mockRepo
@@ -331,9 +322,7 @@ func getDiagnostics(body []byte) string {
 	return d
 }
 
-// ---------------------------------------------------------------------------
 // 1. TestRegisterPhysician_201
-// ---------------------------------------------------------------------------
 
 func TestRegisterPhysician_201(t *testing.T) {
 	h := setupTest()
@@ -356,9 +345,7 @@ func TestRegisterPhysician_201(t *testing.T) {
 	assert.NotEmpty(t, resp.UserID)
 }
 
-// ---------------------------------------------------------------------------
 // 2. TestRegisterPhysician_409_Duplicate
-// ---------------------------------------------------------------------------
 
 func TestRegisterPhysician_409_Duplicate(t *testing.T) {
 	h := setupTest()
@@ -379,9 +366,7 @@ func TestRegisterPhysician_409_Duplicate(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, w.Code)
 }
 
-// ---------------------------------------------------------------------------
 // 3. TestRegisterPatient_201
-// ---------------------------------------------------------------------------
 
 func TestRegisterPatient_201(t *testing.T) {
 	h := setupTest()
@@ -406,9 +391,7 @@ func TestRegisterPatient_201(t *testing.T) {
 	assert.NotEmpty(t, resp.FHIRPatientID)
 }
 
-// ---------------------------------------------------------------------------
 // 4. TestLogin_200_Patient
-// ---------------------------------------------------------------------------
 
 func TestLogin_200_Patient(t *testing.T) {
 	h := setupTest()
@@ -435,9 +418,7 @@ func TestLogin_200_Patient(t *testing.T) {
 	assert.Equal(t, 7200, resp.ExpiresIn)
 }
 
-// ---------------------------------------------------------------------------
 // 5. TestLogin_200_Physician_RequiresTOTP
-// ---------------------------------------------------------------------------
 
 func TestLogin_200_Physician_RequiresTOTP(t *testing.T) {
 	h := setupTest()
@@ -465,9 +446,7 @@ func TestLogin_200_Physician_RequiresTOTP(t *testing.T) {
 	assert.Equal(t, "physician", resp.Role)
 }
 
-// ---------------------------------------------------------------------------
 // 6. TestLogin_401_WrongPassword
-// ---------------------------------------------------------------------------
 
 func TestLogin_401_WrongPassword(t *testing.T) {
 	h := setupTest()
@@ -487,9 +466,7 @@ func TestLogin_401_WrongPassword(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
-// ---------------------------------------------------------------------------
 // 7. TestLogin_401_PendingPhysician
-// ---------------------------------------------------------------------------
 
 func TestLogin_401_PendingPhysician(t *testing.T) {
 	h := setupTest()
@@ -510,9 +487,7 @@ func TestLogin_401_PendingPhysician(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
-// ---------------------------------------------------------------------------
 // 8. TestLogin_429_TooManyAttempts
-// ---------------------------------------------------------------------------
 
 func TestLogin_429_TooManyAttempts(t *testing.T) {
 	h := setupTest()
@@ -529,9 +504,7 @@ func TestLogin_429_TooManyAttempts(t *testing.T) {
 	assert.NotEmpty(t, w.Header().Get("Retry-After"))
 }
 
-// ---------------------------------------------------------------------------
 // 9. TestLogin_401_NoUserEnumeration
-// ---------------------------------------------------------------------------
 
 func TestLogin_401_NoUserEnumeration(t *testing.T) {
 	h := setupTest()
@@ -566,9 +539,7 @@ func TestLogin_401_NoUserEnumeration(t *testing.T) {
 	assert.Contains(t, diag1, "invalid credentials")
 }
 
-// ---------------------------------------------------------------------------
 // 10. TestVerifyTOTP_200
-// ---------------------------------------------------------------------------
 
 func TestVerifyTOTP_200(t *testing.T) {
 	h := setupTest()
@@ -602,9 +573,7 @@ func TestVerifyTOTP_200(t *testing.T) {
 	assert.Equal(t, "physician", resp.Role)
 }
 
-// ---------------------------------------------------------------------------
 // 11. TestVerifyTOTP_401_Invalid
-// ---------------------------------------------------------------------------
 
 func TestVerifyTOTP_401_Invalid(t *testing.T) {
 	h := setupTest()
@@ -632,9 +601,7 @@ func TestVerifyTOTP_401_Invalid(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
-// ---------------------------------------------------------------------------
 // 12. TestLogout_204
-// ---------------------------------------------------------------------------
 
 func TestLogout_204(t *testing.T) {
 	h := setupTest()
@@ -653,9 +620,7 @@ func TestLogout_204(t *testing.T) {
 	assert.Equal(t, http.StatusNoContent, w.Code)
 }
 
-// ---------------------------------------------------------------------------
 // 13. TestLogout_401_AlreadyLoggedOut
-// ---------------------------------------------------------------------------
 
 func TestLogout_401_AlreadyLoggedOut(t *testing.T) {
 	h := setupTest()
@@ -684,9 +649,7 @@ func TestLogout_401_AlreadyLoggedOut(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
-// ---------------------------------------------------------------------------
 // 14. TestRefresh_200
-// ---------------------------------------------------------------------------
 
 func TestRefresh_200(t *testing.T) {
 	h := setupTest()

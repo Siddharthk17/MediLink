@@ -21,6 +21,16 @@ type Config struct {
 	Resend     ResendConfig
 	Sentry     SentryConfig
 	App        AppConfig
+	Storage    StorageConfig
+}
+
+// StorageConfig holds MinIO object storage settings.
+type StorageConfig struct {
+	Endpoint  string `mapstructure:"MINIO_ENDPOINT"`
+	AccessKey string `mapstructure:"MINIO_ACCESS_KEY"`
+	SecretKey string `mapstructure:"MINIO_SECRET_KEY"`
+	Bucket    string `mapstructure:"MINIO_BUCKET"`
+	UseSSL    bool   `mapstructure:"MINIO_USE_SSL"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -139,6 +149,12 @@ func Load() (*Config, error) {
 
 	cfg.Sentry.DSN = v.GetString("SENTRY_DSN")
 
+	cfg.Storage.Endpoint = v.GetString("MINIO_ENDPOINT")
+	cfg.Storage.AccessKey = v.GetString("MINIO_ACCESS_KEY")
+	cfg.Storage.SecretKey = v.GetString("MINIO_SECRET_KEY")
+	cfg.Storage.Bucket = v.GetString("MINIO_BUCKET")
+	cfg.Storage.UseSSL = v.GetBool("MINIO_USE_SSL")
+
 	cfg.App.Environment = v.GetString("APP_ENV")
 	cfg.App.LogLevel = v.GetString("LOG_LEVEL")
 
@@ -162,6 +178,11 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("OPENFDA_BASE_URL", "https://api.fda.gov")
 	v.SetDefault("OLLAMA_BASE_URL", "http://ollama:11434")
 	v.SetDefault("OLLAMA_MODEL", "llama3.1")
+	v.SetDefault("MINIO_ENDPOINT", "minio:9000")
+	v.SetDefault("MINIO_ACCESS_KEY", "MediLink")
+	v.SetDefault("MINIO_SECRET_KEY", "MediLink_minio_dev")
+	v.SetDefault("MINIO_BUCKET", "medilink-lab-reports")
+	v.SetDefault("MINIO_USE_SSL", false)
 	v.SetDefault("APP_ENV", "development")
 	v.SetDefault("LOG_LEVEL", "debug")
 }

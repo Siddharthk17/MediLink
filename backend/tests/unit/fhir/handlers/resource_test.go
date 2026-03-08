@@ -20,9 +20,7 @@ import (
 	"github.com/Siddharthk17/MediLink/internal/fhir/handlers"
 )
 
-// ---------------------------------------------------------------------------
 // Mock implementation of services.ResourceService
-// ---------------------------------------------------------------------------
 
 type mockResourceService struct {
 	createFn     func(ctx context.Context, data json.RawMessage, actorID uuid.UUID) (*services.PatientResponse, error)
@@ -62,9 +60,7 @@ func (m *mockResourceService) Search(ctx context.Context, conditions []string, a
 	return m.searchFn(ctx, conditions, args, count, offset, actorID, baseURL)
 }
 
-// ---------------------------------------------------------------------------
 // Router / parser helpers
-// ---------------------------------------------------------------------------
 
 func setupResourceRouter(resourceType string, svc services.ResourceService, parser handlers.SearchParamParser) *gin.Engine {
 	gin.SetMode(gin.TestMode)
@@ -86,9 +82,7 @@ func noopParser(c *gin.Context) ([]string, []interface{}, int, int, int) {
 	return nil, nil, 1, 20, 0
 }
 
-// ---------------------------------------------------------------------------
 // Reusable test helpers – each exercises a single HTTP verb / status scenario.
-// ---------------------------------------------------------------------------
 
 func testCreate201(t *testing.T, resourceType string) {
 	t.Helper()
@@ -222,9 +216,7 @@ func testSearch200(t *testing.T, resourceType string) {
 	assert.Equal(t, "searchset", bundle["type"])
 }
 
-// ===========================================================================
 // Practitioner
-// ===========================================================================
 
 func TestCreatePractitioner_201(t *testing.T)              { testCreate201(t, "Practitioner") }
 func TestCreatePractitioner_400_InvalidJSON(t *testing.T)   { testCreate400InvalidJSON(t, "Practitioner") }
@@ -234,9 +226,7 @@ func TestUpdatePractitioner_200(t *testing.T)               { testUpdate200(t, "
 func TestDeletePractitioner_204(t *testing.T)               { testDelete204(t, "Practitioner") }
 func TestSearchPractitioner_200(t *testing.T)               { testSearch200(t, "Practitioner") }
 
-// ===========================================================================
 // Organization
-// ===========================================================================
 
 func TestCreateOrganization_201(t *testing.T)              { testCreate201(t, "Organization") }
 func TestCreateOrganization_400_InvalidJSON(t *testing.T)   { testCreate400InvalidJSON(t, "Organization") }
@@ -246,9 +236,7 @@ func TestUpdateOrganization_200(t *testing.T)               { testUpdate200(t, "
 func TestDeleteOrganization_204(t *testing.T)               { testDelete204(t, "Organization") }
 func TestSearchOrganization_200(t *testing.T)               { testSearch200(t, "Organization") }
 
-// ===========================================================================
 // Encounter
-// ===========================================================================
 
 func TestCreateEncounter_201(t *testing.T)              { testCreate201(t, "Encounter") }
 func TestCreateEncounter_400_InvalidJSON(t *testing.T)   { testCreate400InvalidJSON(t, "Encounter") }
@@ -258,9 +246,7 @@ func TestUpdateEncounter_200(t *testing.T)               { testUpdate200(t, "Enc
 func TestDeleteEncounter_204(t *testing.T)               { testDelete204(t, "Encounter") }
 func TestSearchEncounter_200(t *testing.T)               { testSearch200(t, "Encounter") }
 
-// ===========================================================================
 // Condition
-// ===========================================================================
 
 func TestCreateCondition_201(t *testing.T)              { testCreate201(t, "Condition") }
 func TestCreateCondition_400_InvalidJSON(t *testing.T)   { testCreate400InvalidJSON(t, "Condition") }
@@ -270,9 +256,7 @@ func TestUpdateCondition_200(t *testing.T)               { testUpdate200(t, "Con
 func TestDeleteCondition_204(t *testing.T)               { testDelete204(t, "Condition") }
 func TestSearchCondition_200(t *testing.T)               { testSearch200(t, "Condition") }
 
-// ===========================================================================
 // MedicationRequest
-// ===========================================================================
 
 func TestCreateMedicationRequest_201(t *testing.T)              { testCreate201(t, "MedicationRequest") }
 func TestCreateMedicationRequest_400_InvalidJSON(t *testing.T)   { testCreate400InvalidJSON(t, "MedicationRequest") }
@@ -282,9 +266,7 @@ func TestUpdateMedicationRequest_200(t *testing.T)               { testUpdate200
 func TestDeleteMedicationRequest_204(t *testing.T)               { testDelete204(t, "MedicationRequest") }
 func TestSearchMedicationRequest_200(t *testing.T)               { testSearch200(t, "MedicationRequest") }
 
-// ===========================================================================
 // Observation
-// ===========================================================================
 
 func TestCreateObservation_201(t *testing.T)              { testCreate201(t, "Observation") }
 func TestCreateObservation_400_InvalidJSON(t *testing.T)   { testCreate400InvalidJSON(t, "Observation") }
@@ -294,9 +276,7 @@ func TestUpdateObservation_200(t *testing.T)               { testUpdate200(t, "O
 func TestDeleteObservation_204(t *testing.T)               { testDelete204(t, "Observation") }
 func TestSearchObservation_200(t *testing.T)               { testSearch200(t, "Observation") }
 
-// ===========================================================================
 // DiagnosticReport
-// ===========================================================================
 
 func TestCreateDiagnosticReport_201(t *testing.T)              { testCreate201(t, "DiagnosticReport") }
 func TestCreateDiagnosticReport_400_InvalidJSON(t *testing.T)   { testCreate400InvalidJSON(t, "DiagnosticReport") }
@@ -306,9 +286,7 @@ func TestUpdateDiagnosticReport_200(t *testing.T)               { testUpdate200(
 func TestDeleteDiagnosticReport_204(t *testing.T)               { testDelete204(t, "DiagnosticReport") }
 func TestSearchDiagnosticReport_200(t *testing.T)               { testSearch200(t, "DiagnosticReport") }
 
-// ===========================================================================
 // AllergyIntolerance
-// ===========================================================================
 
 func TestCreateAllergyIntolerance_201(t *testing.T)              { testCreate201(t, "AllergyIntolerance") }
 func TestCreateAllergyIntolerance_400_InvalidJSON(t *testing.T)   { testCreate400InvalidJSON(t, "AllergyIntolerance") }
@@ -318,9 +296,7 @@ func TestUpdateAllergyIntolerance_200(t *testing.T)               { testUpdate20
 func TestDeleteAllergyIntolerance_204(t *testing.T)               { testDelete204(t, "AllergyIntolerance") }
 func TestSearchAllergyIntolerance_200(t *testing.T)               { testSearch200(t, "AllergyIntolerance") }
 
-// ===========================================================================
 // Immunization
-// ===========================================================================
 
 func TestCreateImmunization_201(t *testing.T)              { testCreate201(t, "Immunization") }
 func TestCreateImmunization_400_InvalidJSON(t *testing.T)   { testCreate400InvalidJSON(t, "Immunization") }

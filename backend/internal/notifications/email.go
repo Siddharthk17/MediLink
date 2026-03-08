@@ -14,6 +14,9 @@ type EmailService interface {
 	SendWelcomePhysician(ctx context.Context, toEmail, fullName string) error
 	SendPhysicianApproved(ctx context.Context, toEmail, fullName string) error
 	SendAccountLocked(ctx context.Context, toEmail, fullName string, unlockAt time.Time) error
+	SendDocumentProcessingComplete(ctx context.Context, toEmail, fullName, jobID string) error
+	SendDocumentProcessingFailed(ctx context.Context, toEmail, fullName, jobID, reason string) error
+	SendDocumentNeedsReview(ctx context.Context, toEmail, fullName, jobID string) error
 }
 
 type BreakGlassNotification struct {
@@ -50,5 +53,14 @@ func (n *NoopEmailService) SendConsentRevoked(_ context.Context, _ ConsentNotifi
 func (n *NoopEmailService) SendWelcomePhysician(_ context.Context, _, _ string) error { return nil }
 func (n *NoopEmailService) SendPhysicianApproved(_ context.Context, _, _ string) error { return nil }
 func (n *NoopEmailService) SendAccountLocked(_ context.Context, _, _ string, _ time.Time) error {
+	return nil
+}
+func (n *NoopEmailService) SendDocumentProcessingComplete(_ context.Context, _, _, _ string) error {
+	return nil
+}
+func (n *NoopEmailService) SendDocumentProcessingFailed(_ context.Context, _, _, _, _ string) error {
+	return nil
+}
+func (n *NoopEmailService) SendDocumentNeedsReview(_ context.Context, _, _, _ string) error {
 	return nil
 }

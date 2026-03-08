@@ -14,13 +14,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
 	"github.com/Siddharthk17/MediLink/internal/audit"
 	"github.com/Siddharthk17/MediLink/internal/auth"
+	"github.com/Siddharthk17/MediLink/internal/clinical"
 	"github.com/Siddharthk17/MediLink/internal/config"
 	"github.com/Siddharthk17/MediLink/internal/consent"
+	"github.com/Siddharthk17/MediLink/internal/documents"
 	"github.com/Siddharthk17/MediLink/internal/fhir/handlers"
 	"github.com/Siddharthk17/MediLink/internal/fhir/repository"
 	"github.com/Siddharthk17/MediLink/internal/fhir/services"
@@ -31,7 +34,9 @@ import (
 	"github.com/Siddharthk17/MediLink/pkg/crypto"
 	"github.com/Siddharthk17/MediLink/pkg/database"
 	fhirerrors "github.com/Siddharthk17/MediLink/pkg/errors"
+	"github.com/Siddharthk17/MediLink/pkg/metrics"
 	"github.com/Siddharthk17/MediLink/pkg/search"
+	"github.com/Siddharthk17/MediLink/pkg/storage"
 )
 
 func main() {
@@ -110,17 +115,26 @@ func main() {
 	authRepo := auth.NewAuthRepository(db.SQLX)
 	totpSvc := auth.NewTOTPService(encryptor)
 	otpSvc := auth.NewOTPService()
-	authService := auth.NewAuthService(authRepo, jwtSvc, totpSvc, otpSvc, encryptor, emailSvc, auditLogger, db.SQLX, log.Logger)
+	authService := auth.NewAuthService(authRepo, jwtSvc, totpSvc, otpSvc, encryptor, emailSvc, auditLogger, db.SQLX, log.Logger, redisClient.Client)
 	authHandler := auth.NewAuthHandler(authService)
 
 	// Consent system
 	consentRepo := consent.NewConsentRepository(db.SQLX)
 	consentCache := consent.NewConsentCache(redisClient.Client)
-	consentEngine := consent.NewConsentEngine(consentRepo, consentCache, auditLogger, log.Logger)
+	userLookup := consent.NewSQLUserLookup(db.SQLX)
+	consentEngine := consent.NewConsentEngine(consentRepo, consentCache, auditLogger, log.Logger, emailSvc, userLookup, redisClient.Client, db.SQLX)
 	consentHandler := consent.NewConsentHandler(consentEngine)
 
 	fhirValidator := validator.NewFHIRValidator()
 	refValidator := services.NewReferenceValidator(db.SQLX)
+
+	// Drug Interaction Checker (needed for MedicationRequest pre-create hook)
+	drugCheckerRepo := clinical.NewDrugCheckerRepository(db.SQLX, log.Logger)
+	openFDAClient := clinical.NewOpenFDAClient(cfg.OpenFDA.BaseURL, log.Logger)
+	rxNormClient := clinical.NewRxNormClient(redisClient.Client, log.Logger)
+	allergyChecker := clinical.NewAllergyChecker(db.SQLX, rxNormClient, drugCheckerRepo, log.Logger)
+	drugChecker := clinical.NewDrugChecker(drugCheckerRepo, openFDAClient, rxNormClient, allergyChecker, db.SQLX, redisClient.Client, log.Logger)
+	clinicalHandler := clinical.NewClinicalHandler(drugChecker, auditLogger, log.Logger)
 
 	// Patient (existing Week 1 resource)
 	patientRepo := repository.NewPostgresPatientRepository(db.SQLX)
@@ -172,7 +186,7 @@ func main() {
 	)
 	conditionHandler := handlers.NewResourceHandler(conditionService, "Condition", handlers.ConditionSearchParser)
 
-	// MedicationRequest — status transitions + patient + encounter ref validation
+	// MedicationRequest — status transitions + patient + encounter ref validation + drug interaction check
 	medReqRepo := repository.NewBaseRepository(db.SQLX, esClient, log.Logger, "MedicationRequest")
 	medReqService := services.NewResourceService(
 		&medReqRepo, fhirValidator.ValidateMedicationRequest, refValidator, auditLogger, "MedicationRequest",
@@ -180,7 +194,30 @@ func main() {
 			if err := refValidator.ValidateReference(ctx, extractRef(data, "subject"), "Patient"); err != nil {
 				return err
 			}
-			return refValidator.ValidateOptionalReference(ctx, extractRef(data, "encounter"), "Encounter")
+			if err := refValidator.ValidateOptionalReference(ctx, extractRef(data, "encounter"), "Encounter"); err != nil {
+				return err
+			}
+
+			// Drug interaction check — extract RxNorm code and patient FHIR ID
+			rxCode := extractRxNormCode(data)
+			patientRef := extractRef(data, "subject")
+			if rxCode != "" && patientRef != "" {
+				patientFHIRID := strings.TrimPrefix(patientRef, "Patient/")
+				result, err := drugChecker.CheckInteractions(ctx, rxCode, patientFHIRID)
+				if err != nil {
+					log.Error().Err(err).Msg("drug interaction check failed")
+					// Don't block on check failure — proceed with save
+				} else if result != nil && result.HasContraindication {
+					physicianID := ""
+					if actorID, ok := ctx.Value("actor_id").(uuid.UUID); ok {
+						physicianID = actorID.String()
+					}
+					if physicianID == "" || !drugChecker.HasValidAcknowledgment(ctx, physicianID, patientFHIRID, rxCode) {
+						return fmt.Errorf("contraindicated drug interaction detected — acknowledge via POST /clinical/drug-check/acknowledge before prescribing")
+					}
+				}
+			}
+			return nil
 		}),
 		services.WithPreUpdateHook(medReqStatusTransitionHook(&medReqRepo, refValidator)),
 	)
@@ -259,6 +296,31 @@ func main() {
 	labTrendsService := services.NewLabTrendsService(db.SQLX, auditLogger)
 	labTrendsHandler := handlers.NewLabTrendsHandler(labTrendsService)
 
+	// Asynq client for document pipeline
+	redisAddr := cfg.Redis.URL
+	if len(redisAddr) > 8 && redisAddr[:8] == "redis://" {
+		redisAddr = redisAddr[8:]
+	}
+	asynqClient := asynq.NewClient(asynq.RedisClientOpt{Addr: redisAddr})
+	defer asynqClient.Close()
+
+	// MinIO storage
+	var storageClient storage.StorageClient
+	mc, mcErr := storage.NewMinIOClient(
+		cfg.Storage.Endpoint, cfg.Storage.AccessKey, cfg.Storage.SecretKey,
+		cfg.Storage.Bucket, cfg.Storage.UseSSL, log.Logger,
+	)
+	if mcErr != nil {
+		log.Warn().Err(mcErr).Msg("MinIO unavailable — using noop storage")
+		storageClient = &storage.NoopStorageClient{}
+	} else {
+		storageClient = mc
+	}
+
+	// Document pipeline
+	docJobRepo := documents.NewDocumentJobRepository(db.SQLX, log.Logger)
+	documentHandler := documents.NewDocumentHandler(docJobRepo, storageClient, asynqClient, cfg.Storage.Bucket, auditLogger, log.Logger)
+
 	// Setup Gin
 	gin.SetMode(cfg.Server.Mode)
 	router := gin.New()
@@ -269,6 +331,7 @@ func main() {
 	router.Use(middleware.RequestLoggingMiddleware(log.Logger))
 	router.Use(middleware.CORSMiddleware())
 	router.Use(middleware.SecurityHeadersMiddleware())
+	router.Use(metrics.GinMiddleware())
 
 	// FHIR R4 routes
 	v1 := router.Group("/fhir/R4")
@@ -373,6 +436,25 @@ func main() {
 		consentRoutes.GET("/access-log", auth.RequireRole("patient", "admin"), consentHandler.GetAccessLog)
 	}
 
+	// Clinical routes — drug interaction checker
+	clinicalRoutes := router.Group("/clinical")
+	clinicalRoutes.Use(auth.AuthMiddleware(jwtSvc))
+	{
+		clinicalRoutes.POST("/drug-check", auth.RequirePhysician(), clinicalHandler.CheckDrugInteractions)
+		clinicalRoutes.POST("/drug-check/acknowledge", auth.RequirePhysician(), clinicalHandler.AcknowledgeInteraction)
+		clinicalRoutes.GET("/drug-check/history/:patientId", auth.RequirePhysician(), clinicalHandler.GetCheckHistory)
+	}
+
+	// Document routes — upload / status / list / delete
+	documentRoutes := router.Group("/documents")
+	documentRoutes.Use(auth.AuthMiddleware(jwtSvc))
+	{
+		documentRoutes.POST("/upload", documentHandler.UploadDocument)
+		documentRoutes.GET("/jobs/:jobId", documentHandler.GetJobStatus)
+		documentRoutes.GET("/jobs", documentHandler.ListJobs)
+		documentRoutes.DELETE("/jobs/:jobId", documentHandler.DeleteJob)
+	}
+
 	// Admin routes — admin only
 	adminRoutes := router.Group("/admin")
 	adminRoutes.Use(auth.AuthMiddleware(jwtSvc))
@@ -434,7 +516,8 @@ func main() {
 
 	// Health check endpoints — no auth, no rate limit
 	router.GET("/health", healthCheckHandler(db, redisClient))
-	router.GET("/ready", readinessHandler(db, redisClient, esClient))
+	router.GET("/ready", readinessHandler(db, redisClient, esClient, storageClient))
+	router.GET("/metrics", metrics.Handler())
 
 	// Start server
 	srv := &http.Server{
@@ -477,6 +560,34 @@ func extractRef(data json.RawMessage, fieldName string) string {
 	if field, ok := m[fieldName].(map[string]interface{}); ok {
 		if ref, ok := field["reference"].(string); ok {
 			return ref
+		}
+	}
+	return ""
+}
+
+// extractRxNormCode extracts the RxNorm code from a MedicationRequest's medicationCodeableConcept.
+func extractRxNormCode(data json.RawMessage) string {
+	var m map[string]interface{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		return ""
+	}
+	med, ok := m["medicationCodeableConcept"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	codings, ok := med["coding"].([]interface{})
+	if !ok {
+		return ""
+	}
+	for _, c := range codings {
+		coding, ok := c.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		system, _ := coding["system"].(string)
+		code, _ := coding["code"].(string)
+		if system == "http://www.nlm.nih.gov/research/umls/rxnorm" && code != "" {
+			return code
 		}
 	}
 	return ""
@@ -608,7 +719,7 @@ func healthCheckHandler(db *database.PostgresConnections, redis *cache.RedisClie
 	}
 }
 
-func readinessHandler(db *database.PostgresConnections, redis *cache.RedisClient, es search.SearchClient) gin.HandlerFunc {
+func readinessHandler(db *database.PostgresConnections, redis *cache.RedisClient, es search.SearchClient, sc storage.StorageClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		checks := map[string]string{}
 		allOk := true
@@ -632,6 +743,13 @@ func readinessHandler(db *database.PostgresConnections, redis *cache.RedisClient
 			allOk = false
 		} else {
 			checks["elasticsearch"] = "ok"
+		}
+
+		if !sc.Health(c.Request.Context()) {
+			checks["minio"] = "unavailable"
+			allOk = false
+		} else {
+			checks["minio"] = "ok"
 		}
 
 		status := http.StatusOK

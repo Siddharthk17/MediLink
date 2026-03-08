@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 
 	"github.com/Siddharthk17/MediLink/internal/audit"
@@ -17,9 +18,13 @@ import (
 	"github.com/Siddharthk17/MediLink/pkg/crypto"
 )
 
-// ---------------------------------------------------------------------------
+const (
+	totpMaxAttempts    = 5
+	totpAttemptWindow  = 10 * time.Minute
+	totpLockoutDuration = 30 * time.Minute
+)
+
 // Request / Response types
-// ---------------------------------------------------------------------------
 
 // PhysicianRegistrationRequest is the payload for physician sign-up.
 type PhysicianRegistrationRequest struct {
@@ -95,9 +100,7 @@ type TOTPSetupCompleteResponse struct {
 	Message     string   `json:"message"`
 }
 
-// ---------------------------------------------------------------------------
 // AuthService
-// ---------------------------------------------------------------------------
 
 // AuthService is the business-logic layer for authentication.
 type AuthService struct {
@@ -110,6 +113,7 @@ type AuthService struct {
 	auditLogger audit.AuditLogger
 	db          *sqlx.DB
 	logger      zerolog.Logger
+	redisClient *redis.Client
 }
 
 // NewAuthService creates a new AuthService with all dependencies.
@@ -123,17 +127,20 @@ func NewAuthService(
 	auditLogger audit.AuditLogger,
 	db *sqlx.DB,
 	logger zerolog.Logger,
+	redisClient ...*redis.Client,
 ) *AuthService {
-	return &AuthService{
+	svc := &AuthService{
 		repo: repo, jwtSvc: jwtSvc, totpSvc: totpSvc, otpSvc: otpSvc,
 		encryptor: encryptor, emailSvc: emailSvc, auditLogger: auditLogger,
 		db: db, logger: logger,
 	}
+	if len(redisClient) > 0 {
+		svc.redisClient = redisClient[0]
+	}
+	return svc
 }
 
-// ---------------------------------------------------------------------------
 // Registration
-// ---------------------------------------------------------------------------
 
 // RegisterPhysician creates a physician account in "pending" status.
 func (s *AuthService) RegisterPhysician(ctx context.Context, req PhysicianRegistrationRequest) (*RegisterResponse, error) {
@@ -338,9 +345,7 @@ func (s *AuthService) RegisterPatient(ctx context.Context, req PatientRegistrati
 	}, nil
 }
 
-// ---------------------------------------------------------------------------
 // Login / TOTP / Refresh / Logout
-// ---------------------------------------------------------------------------
 
 // Login authenticates a user and returns tokens.
 func (s *AuthService) Login(ctx context.Context, req LoginRequest, ipAddress, userAgent string) (*LoginResponse, error) {
@@ -468,6 +473,11 @@ func (s *AuthService) Login(ctx context.Context, req LoginRequest, ipAddress, us
 
 // VerifyTOTP verifies a TOTP code and issues full tokens.
 func (s *AuthService) VerifyTOTP(ctx context.Context, userID uuid.UUID, code, oldJTI, ipAddress, userAgent string) (*LoginResponse, error) {
+	// Check lockout before doing any work
+	if err := s.checkTOTPLockout(ctx, userID); err != nil {
+		return nil, err
+	}
+
 	user, err := s.repo.GetUserByID(ctx, userID)
 	if err != nil || user == nil {
 		return nil, fmt.Errorf("invalid credentials")
@@ -484,8 +494,12 @@ func (s *AuthService) VerifyTOTP(ctx context.Context, userID uuid.UUID, code, ol
 	}
 
 	if !s.totpSvc.ValidateCode(secret, code) {
+		s.recordTOTPFailure(ctx, userID)
 		return nil, fmt.Errorf("invalid credentials")
 	}
+
+	// Successful verification — clear attempt counter
+	s.clearTOTPAttempts(ctx, userID)
 
 	// Blacklist the pre-MFA access token
 	if oldJTI != "" {
@@ -515,6 +529,68 @@ func (s *AuthService) VerifyTOTP(ctx context.Context, userID uuid.UUID, code, ol
 		ExpiresIn:    7200,
 		Role:         user.Role,
 	}, nil
+}
+
+// checkTOTPLockout returns an error if the user is currently locked out.
+func (s *AuthService) checkTOTPLockout(ctx context.Context, userID uuid.UUID) error {
+	if s.redisClient == nil {
+		return nil
+	}
+	lockoutKey := fmt.Sprintf("totp:lockout:%s", userID.String())
+	ttl, err := s.redisClient.TTL(ctx, lockoutKey).Result()
+	if err != nil {
+		s.logger.Warn().Err(err).Str("userID", userID.String()).Msg("failed to check TOTP lockout in Redis")
+		return nil
+	}
+	if ttl > 0 {
+		remaining := int(ttl.Seconds())
+		s.logger.Warn().Str("userID", userID.String()).Int("retryAfter", remaining).Msg("TOTP account locked")
+		return fmt.Errorf("too many failed TOTP attempts, account temporarily locked — retry after %d seconds", remaining)
+	}
+	return nil
+}
+
+// recordTOTPFailure increments the failed-attempt counter and triggers lockout if threshold is exceeded.
+func (s *AuthService) recordTOTPFailure(ctx context.Context, userID uuid.UUID) {
+	if s.redisClient == nil {
+		return
+	}
+	attemptsKey := fmt.Sprintf("totp:attempts:%s", userID.String())
+
+	count, err := s.redisClient.Incr(ctx, attemptsKey).Result()
+	if err != nil {
+		s.logger.Warn().Err(err).Str("userID", userID.String()).Msg("failed to increment TOTP attempts in Redis")
+		return
+	}
+
+	// Set expiry on first attempt
+	if count == 1 {
+		s.redisClient.Expire(ctx, attemptsKey, totpAttemptWindow)
+	}
+
+	s.logger.Info().Str("userID", userID.String()).Int64("attempts", count).Msg("failed TOTP attempt")
+
+	if count >= int64(totpMaxAttempts) {
+		lockoutKey := fmt.Sprintf("totp:lockout:%s", userID.String())
+		if err := s.redisClient.Set(ctx, lockoutKey, "1", totpLockoutDuration).Err(); err != nil {
+			s.logger.Error().Err(err).Str("userID", userID.String()).Msg("failed to set TOTP lockout in Redis")
+			return
+		}
+		// Clean up attempts key since lockout is now active
+		s.redisClient.Del(ctx, attemptsKey)
+		s.logger.Warn().Str("userID", userID.String()).Msg("TOTP account locked due to too many failed attempts")
+	}
+}
+
+// clearTOTPAttempts removes the failed-attempt counter after a successful verification.
+func (s *AuthService) clearTOTPAttempts(ctx context.Context, userID uuid.UUID) {
+	if s.redisClient == nil {
+		return
+	}
+	attemptsKey := fmt.Sprintf("totp:attempts:%s", userID.String())
+	if err := s.redisClient.Del(ctx, attemptsKey).Err(); err != nil {
+		s.logger.Warn().Err(err).Str("userID", userID.String()).Msg("failed to clear TOTP attempts in Redis")
+	}
 }
 
 // RefreshToken rotates tokens using a valid refresh token.
@@ -583,9 +659,7 @@ func (s *AuthService) Logout(ctx context.Context, jti, refreshTokenString string
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // Profile / TOTP setup
-// ---------------------------------------------------------------------------
 
 // GetMe returns the authenticated user's profile with decrypted PII.
 func (s *AuthService) GetMe(ctx context.Context, userID uuid.UUID) (*UserProfile, error) {
@@ -697,9 +771,7 @@ func (s *AuthService) VerifyTOTPSetup(ctx context.Context, userID uuid.UUID, cod
 	}, nil
 }
 
-// ---------------------------------------------------------------------------
 // Password / Admin actions
-// ---------------------------------------------------------------------------
 
 // ChangePassword verifies the old password, validates the new one, and updates.
 func (s *AuthService) ChangePassword(ctx context.Context, userID uuid.UUID, oldPassword, newPassword string) error {
@@ -828,9 +900,7 @@ func (s *AuthService) ReinstatePhysician(ctx context.Context, userID, adminID uu
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 func hashToken(token string) string {
 	h := sha256.Sum256([]byte(token))

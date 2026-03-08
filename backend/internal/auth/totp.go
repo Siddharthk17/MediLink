@@ -85,7 +85,7 @@ func (s *totpService) GenerateBackupCodes() ([]string, []string, error) {
 		}
 		codes[i] = fmt.Sprintf("%X", b)[:8]
 
-		hash, err := bcrypt.GenerateFromPassword([]byte(codes[i]), bcrypt.DefaultCost)
+		hash, err := bcrypt.GenerateFromPassword([]byte(codes[i]), bcryptCost)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to hash backup code: %w", err)
 		}

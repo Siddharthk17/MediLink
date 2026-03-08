@@ -8,9 +8,7 @@ import (
 	"github.com/Siddharthk17/MediLink/pkg/search"
 )
 
-// ---------------------------------------------------------------------------
 // search.NoopSearchClient tests – verify the interface contract
-// ---------------------------------------------------------------------------
 
 func TestNoopSearchClient_IndexResource(t *testing.T) {
 	var client search.SearchClient = &search.NoopSearchClient{}
@@ -76,9 +74,7 @@ func TestNoopSearchClient_Health(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // search.ESClient index constant tests – verify all 10 resource type constants exist
-// ---------------------------------------------------------------------------
 
 func TestESClient_IndexConstants(t *testing.T) {
 	// Verify all 10 FHIR resource index constants are defined
@@ -108,9 +104,7 @@ func TestESClient_IndexConstants(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // search.SearchClient interface compliance – verify both implementations
-// ---------------------------------------------------------------------------
 
 func TestESClient_ImplementsSearchClient(t *testing.T) {
 	// Verify NoopSearchClient satisfies the SearchClient interface at compile time.
@@ -120,9 +114,7 @@ func TestESClient_ImplementsSearchClient(t *testing.T) {
 	var _ search.SearchClient = (*search.ESClient)(nil)
 }
 
-// ---------------------------------------------------------------------------
 // search.SearchResult struct tests – verify field access
-// ---------------------------------------------------------------------------
 
 func TestSearchResult_Fields(t *testing.T) {
 	result := search.SearchResult{
@@ -142,9 +134,7 @@ func TestSearchResult_Fields(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Index naming convention tests
-// ---------------------------------------------------------------------------
 
 func TestIndexConstants_NamingConvention(t *testing.T) {
 	indices := []struct {

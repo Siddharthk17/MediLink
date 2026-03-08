@@ -101,7 +101,8 @@ func (s *ResourceServiceImpl) Create(ctx context.Context, data json.RawMessage, 
 	}
 
 	if s.preCreateHook != nil {
-		if err := s.preCreateHook(ctx, data); err != nil {
+		hookCtx := context.WithValue(ctx, "actor_id", actorID)
+		if err := s.preCreateHook(hookCtx, data); err != nil {
 			return nil, err
 		}
 	}
@@ -330,9 +331,7 @@ func (s *ResourceServiceImpl) Search(ctx context.Context, conditions []string, a
 	return &BundleResponse{Data: bundleJSON}, nil
 }
 
-// ---------------------------------------------------------------------------
 // Helper: patient-ref / status extraction
-// ---------------------------------------------------------------------------
 
 func (s *ResourceServiceImpl) extractPatientRef(data json.RawMessage) *string {
 	if s.patientRefExtractor != nil {
@@ -352,9 +351,7 @@ func (s *ResourceServiceImpl) extractStatus(data json.RawMessage) string {
 	return ExtractStatusField(data)
 }
 
-// ---------------------------------------------------------------------------
 // Exported helpers for reference / status extraction and bundle building
-// ---------------------------------------------------------------------------
 
 // ExtractSubjectRef extracts subject.reference for resources that use "subject".
 func ExtractSubjectRef(data json.RawMessage) *string {

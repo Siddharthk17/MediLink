@@ -19,9 +19,7 @@ import (
 	"github.com/Siddharthk17/MediLink/internal/consent"
 )
 
-// ---------------------------------------------------------------------------
 // Mock: ConsentRepository
-// ---------------------------------------------------------------------------
 
 type mockConsentRepo struct {
 	mu                sync.Mutex
@@ -202,9 +200,7 @@ func (m *mockConsentRepo) getCheckConsentCalls() int {
 	return m.checkConsentCalls
 }
 
-// ---------------------------------------------------------------------------
 // Mock: AuditLogger
-// ---------------------------------------------------------------------------
 
 type mockAuditLogger struct {
 	mu   sync.Mutex
@@ -234,13 +230,11 @@ func (m *mockAuditLogger) entries() []audit.AuditEntry {
 	return out
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 func newTestEngine(repo *mockConsentRepo, cache *consent.ConsentCache) (consent.ConsentEngine, *mockAuditLogger) {
 	al := &mockAuditLogger{}
-	engine := consent.NewConsentEngine(repo, cache, al, zerolog.Nop())
+	engine := consent.NewConsentEngine(repo, cache, al, zerolog.Nop(), nil, nil, nil)
 	return engine, al
 }
 
@@ -252,9 +246,7 @@ func setupCache(t *testing.T) *consent.ConsentCache {
 	return consent.NewConsentCache(rdb)
 }
 
-// ---------------------------------------------------------------------------
 // 1. TestGrantConsent_201
-// ---------------------------------------------------------------------------
 
 func TestGrantConsent_201(t *testing.T) {
 	repo := newMockRepo()
@@ -295,9 +287,7 @@ func TestGrantConsent_201(t *testing.T) {
 	assert.True(t, entries[0].Success)
 }
 
-// ---------------------------------------------------------------------------
 // 2. TestGrantConsent_400_SelfGrant
-// ---------------------------------------------------------------------------
 
 func TestGrantConsent_400_SelfGrant(t *testing.T) {
 	repo := newMockRepo()
@@ -317,9 +307,7 @@ func TestGrantConsent_400_SelfGrant(t *testing.T) {
 	assert.Contains(t, err.Error(), "cannot grant consent to yourself")
 }
 
-// ---------------------------------------------------------------------------
 // 3. TestGrantConsent_404_PhysicianNotFound
-// ---------------------------------------------------------------------------
 
 func TestGrantConsent_404_PhysicianNotFound(t *testing.T) {
 	repo := newMockRepo()
@@ -340,9 +328,7 @@ func TestGrantConsent_404_PhysicianNotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "not found")
 }
 
-// ---------------------------------------------------------------------------
 // 4. TestRevokeConsent_200
-// ---------------------------------------------------------------------------
 
 func TestRevokeConsent_200(t *testing.T) {
 	repo := newMockRepo()
@@ -392,9 +378,7 @@ func TestRevokeConsent_200(t *testing.T) {
 	assert.True(t, found, "audit log should contain a revoke entry with status 200")
 }
 
-// ---------------------------------------------------------------------------
 // 5. TestRevokeConsent_403_WrongPatient
-// ---------------------------------------------------------------------------
 
 func TestRevokeConsent_403_WrongPatient(t *testing.T) {
 	repo := newMockRepo()
@@ -423,9 +407,7 @@ func TestRevokeConsent_403_WrongPatient(t *testing.T) {
 	assert.Contains(t, err.Error(), "only the patient")
 }
 
-// ---------------------------------------------------------------------------
 // 6. TestCheckConsent_CacheHit
-// ---------------------------------------------------------------------------
 
 func TestCheckConsent_CacheHit(t *testing.T) {
 	repo := newMockRepo()
@@ -463,9 +445,7 @@ func TestCheckConsent_CacheHit(t *testing.T) {
 		"second CheckConsent should use cache, not call repo again")
 }
 
-// ---------------------------------------------------------------------------
 // 7. TestCheckConsent_CacheMiss
-// ---------------------------------------------------------------------------
 
 func TestCheckConsent_CacheMiss(t *testing.T) {
 	repo := newMockRepo()
@@ -504,9 +484,7 @@ func TestCheckConsent_CacheMiss(t *testing.T) {
 	assert.Equal(t, 1, repo.getCheckConsentCalls(), "second call should hit cache, not repo")
 }
 
-// ---------------------------------------------------------------------------
 // 8. TestCheckConsent_AfterRevoke
-// ---------------------------------------------------------------------------
 
 func TestCheckConsent_AfterRevoke(t *testing.T) {
 	repo := newMockRepo()
@@ -544,9 +522,7 @@ func TestCheckConsent_AfterRevoke(t *testing.T) {
 	assert.False(t, granted, "consent check should return false after revocation")
 }
 
-// ---------------------------------------------------------------------------
 // 9. TestBreakGlass_201
-// ---------------------------------------------------------------------------
 
 func TestBreakGlass_201(t *testing.T) {
 	repo := newMockRepo()
@@ -595,9 +571,7 @@ func TestBreakGlass_201(t *testing.T) {
 	assert.Contains(t, bgEntry.PatientRef, fhirID)
 }
 
-// ---------------------------------------------------------------------------
 // 10. TestBreakGlass_400_ShortReason
-// ---------------------------------------------------------------------------
 
 func TestBreakGlass_400_ShortReason(t *testing.T) {
 	repo := newMockRepo()
@@ -620,12 +594,11 @@ func TestBreakGlass_400_ShortReason(t *testing.T) {
 	assert.Contains(t, err.Error(), "at least 20 characters")
 }
 
-// ---------------------------------------------------------------------------
 // 11. TestBreakGlass_429_RateLimited
-// ---------------------------------------------------------------------------
 
 func TestBreakGlass_429_RateLimited(t *testing.T) {
 	repo := newMockRepo()
+	repo.breakGlassLimit = 100 // disable repo-level limiting; test Redis rate limit
 	physicianID := uuid.New()
 	repo.knownProviders[physicianID] = true
 
@@ -637,7 +610,12 @@ func TestBreakGlass_429_RateLimited(t *testing.T) {
 		repo.addPatient(pid, fhirIDs[i])
 	}
 
-	engine, _ := newTestEngine(repo, nil)
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { rdb.Close() })
+
+	al := &mockAuditLogger{}
+	engine := consent.NewConsentEngine(repo, nil, al, zerolog.Nop(), nil, nil, rdb)
 	ctx := context.Background()
 	validReason := "Patient is unconscious and requires emergency treatment access immediately"
 
@@ -663,9 +641,7 @@ func TestBreakGlass_429_RateLimited(t *testing.T) {
 	assert.Contains(t, err.Error(), "rate limit")
 }
 
-// ---------------------------------------------------------------------------
 // 12. TestConsentScope_FullAccess
-// ---------------------------------------------------------------------------
 
 func TestConsentScope_FullAccess(t *testing.T) {
 	repo := newMockRepo()
@@ -702,9 +678,7 @@ func TestConsentScope_FullAccess(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // 13. TestConsentScope_Limited
-// ---------------------------------------------------------------------------
 
 func TestConsentScope_Limited(t *testing.T) {
 	repo := newMockRepo()
