@@ -17,6 +17,7 @@ type EmailService interface {
 	SendDocumentProcessingComplete(ctx context.Context, toEmail, fullName, jobID string) error
 	SendDocumentProcessingFailed(ctx context.Context, toEmail, fullName, jobID, reason string) error
 	SendDocumentNeedsReview(ctx context.Context, toEmail, fullName, jobID string) error
+	SendTemplated(ctx context.Context, toEmail, templateName, lang string, data map[string]interface{}) error
 }
 
 type BreakGlassNotification struct {
@@ -62,5 +63,8 @@ func (n *NoopEmailService) SendDocumentProcessingFailed(_ context.Context, _, _,
 	return nil
 }
 func (n *NoopEmailService) SendDocumentNeedsReview(_ context.Context, _, _, _ string) error {
+	return nil
+}
+func (n *NoopEmailService) SendTemplated(_ context.Context, _, _, _ string, _ map[string]interface{}) error {
 	return nil
 }

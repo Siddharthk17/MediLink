@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;background-color:#f9fafb;">
+<div style="background:#ffffff;border-radius:8px;padding:32px;border:1px solid #e5e7eb;">
+<div style="text-align:center;margin-bottom:24px;">
+<h1 style="color:#1a73e8;font-size:24px;margin:0;">MediLink</h1>
+<p style="color:#6b7280;font-size:14px;margin:4px 0 0;">Health Platform</p>
+</div>
+<h2 style="color:#dc2626;font-size:20px;">Document Processing Failed</h2>
+<p>Dear {{.FullName}},</p>
+<p>We were unable to process your uploaded document.</p>
+<div style="background:#fef2f2;border-left:4px solid #dc2626;padding:16px;margin:20px 0;border-radius:4px;">
+<p style="margin:4px 0;"><strong>Job ID:</strong> {{.JobID}}</p>
+<p style="margin:4px 0;"><strong>Reason:</strong> {{.Reason}}</p>
+</div>
+<p><strong>What you can do:</strong></p>
+<ul>
+<li>Ensure the document is a clear scan or photo of a lab report</li>
+<li>Check that the file is in a supported format (PDF, JPG, PNG)</li>
+<li>Try re-uploading the document</li>
+</ul>
+<p>If the issue persists, please contact our support team.</p>
+<p style="color:#6b7280;font-size:12px;margin-top:32px;border-top:1px solid #e5e7eb;padding-top:16px;">This is an automated notification from MediLink. Please do not reply to this email.</p>
+</div>
+</body>
+</html>

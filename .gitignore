@@ -29,3 +29,8 @@ vendor/
 tmp/
 *.env
 *.out
+
+# Firebase service account — contains private key
+medilink-firebase-adminsdk.json
+*-adminsdk*.json
+google-services.json

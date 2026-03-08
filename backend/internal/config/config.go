@@ -22,6 +22,7 @@ type Config struct {
 	Sentry     SentryConfig
 	App        AppConfig
 	Storage    StorageConfig
+	Firebase   FirebaseConfig
 }
 
 // StorageConfig holds MinIO object storage settings.
@@ -75,12 +76,19 @@ type OpenFDAConfig struct {
 // GeminiConfig holds Gemini API settings.
 type GeminiConfig struct {
 	APIKey string `mapstructure:"GEMINI_API_KEY"`
+	Model  string `mapstructure:"GEMINI_MODEL"`
 }
 
 // OllamaConfig holds Ollama settings.
 type OllamaConfig struct {
 	BaseURL string `mapstructure:"OLLAMA_BASE_URL"`
 	Model   string `mapstructure:"OLLAMA_MODEL"`
+}
+
+// FirebaseConfig holds Firebase Admin SDK settings.
+type FirebaseConfig struct {
+	ServiceAccountPath string `mapstructure:"FIREBASE_SERVICE_ACCOUNT_PATH"`
+	ProjectID          string `mapstructure:"FIREBASE_PROJECT_ID"`
 }
 
 // ResendConfig holds email notification settings.
@@ -147,6 +155,9 @@ func Load() (*Config, error) {
 	cfg.Resend.APIKey = v.GetString("RESEND_API_KEY")
 	cfg.Resend.FromEmail = v.GetString("RESEND_FROM_EMAIL")
 
+	cfg.Firebase.ServiceAccountPath = v.GetString("FIREBASE_SERVICE_ACCOUNT_PATH")
+	cfg.Firebase.ProjectID = v.GetString("FIREBASE_PROJECT_ID")
+
 	cfg.Sentry.DSN = v.GetString("SENTRY_DSN")
 
 	cfg.Storage.Endpoint = v.GetString("MINIO_ENDPOINT")
@@ -178,6 +189,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("OPENFDA_BASE_URL", "https://api.fda.gov")
 	v.SetDefault("OLLAMA_BASE_URL", "http://ollama:11434")
 	v.SetDefault("OLLAMA_MODEL", "llama3.1")
+	v.SetDefault("GEMINI_MODEL", "gemini-1.5-flash")
+	v.SetDefault("FIREBASE_SERVICE_ACCOUNT_PATH", "./firebase-adminsdk.json")
+	v.SetDefault("FIREBASE_PROJECT_ID", "")
 	v.SetDefault("MINIO_ENDPOINT", "minio:9000")
 	v.SetDefault("MINIO_ACCESS_KEY", "MediLink")
 	v.SetDefault("MINIO_SECRET_KEY", "MediLink_minio_dev")

@@ -18,6 +18,7 @@ import (
 // StorageClient defines MinIO storage operations.
 type StorageClient interface {
 	UploadFile(ctx context.Context, patientFHIRID string, file io.Reader, fileName string, contentType string, size int64) (string, error)
+	UploadWithKey(ctx context.Context, bucket, key string, data io.Reader, contentType string, size int64) error
 	GetPresignedURL(ctx context.Context, bucket, key string) (string, error)
 	DeleteFile(ctx context.Context, bucket, key string) error
 	Health(ctx context.Context) bool
@@ -82,6 +83,18 @@ func (m *MinIOClient) UploadFile(ctx context.Context, patientFHIRID string, file
 	return key, nil
 }
 
+// UploadWithKey stores data in MinIO with an explicit bucket and key.
+func (m *MinIOClient) UploadWithKey(ctx context.Context, bucket, key string, data io.Reader, contentType string, size int64) error {
+	_, err := m.client.PutObject(ctx, bucket, key, data, size, minio.PutObjectOptions{
+		ContentType: contentType,
+	})
+	if err != nil {
+		return fmt.Errorf("minio upload: %w", err)
+	}
+	m.logger.Info().Str("key", key).Str("bucket", bucket).Msg("file uploaded to MinIO")
+	return nil
+}
+
 // GetPresignedURL generates a pre-signed download URL with 15-minute expiry.
 func (m *MinIOClient) GetPresignedURL(ctx context.Context, bucket, key string) (string, error) {
 	url, err := m.client.PresignedGetObject(ctx, bucket, key, 15*time.Minute, nil)
@@ -122,6 +135,9 @@ type NoopStorageClient struct{}
 
 func (n *NoopStorageClient) UploadFile(_ context.Context, patientFHIRID string, _ io.Reader, fileName string, contentType string, _ int64) (string, error) {
 	return fmt.Sprintf("%s/%s/%s", patientFHIRID, time.Now().Format("2006-01-02"), fileName), nil
+}
+func (n *NoopStorageClient) UploadWithKey(_ context.Context, _, key string, _ io.Reader, _ string, _ int64) error {
+	return nil
 }
 func (n *NoopStorageClient) GetPresignedURL(_ context.Context, _, key string) (string, error) {
 	return "http://localhost:9000/" + key, nil

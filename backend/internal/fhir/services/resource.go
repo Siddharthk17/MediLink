@@ -51,6 +51,12 @@ func WithPreUpdateHook(fn func(ctx context.Context, resourceID string, data json
 	return func(s *ResourceServiceImpl) { s.preUpdateHook = fn }
 }
 
+// WithPostCreateHook sets a hook invoked after resource creation (e.g. push notifications).
+// Receives the created resource data and returned resource ID.
+func WithPostCreateHook(fn func(ctx context.Context, resourceID string, data json.RawMessage)) ResourceServiceOption {
+	return func(s *ResourceServiceImpl) { s.postCreateHook = fn }
+}
+
 // ResourceServiceImpl implements ResourceService for a configurable resource type.
 type ResourceServiceImpl struct {
 	repo                *repository.BaseRepository
@@ -62,6 +68,7 @@ type ResourceServiceImpl struct {
 	statusExtractor     func(json.RawMessage) string
 	preCreateHook       func(ctx context.Context, data json.RawMessage) error
 	preUpdateHook       func(ctx context.Context, resourceID string, data json.RawMessage) error
+	postCreateHook      func(ctx context.Context, resourceID string, data json.RawMessage)
 }
 
 // NewResourceService creates a new ResourceServiceImpl for the given resource type.
@@ -131,6 +138,15 @@ func (s *ResourceServiceImpl) Create(ctx context.Context, data json.RawMessage, 
 	created, err := s.repo.Create(ctx, resource)
 	if err != nil {
 		return nil, err
+	}
+
+	if s.postCreateHook != nil {
+		// Extract resource ID from created data for the hook
+		var idHolder struct {
+			ID string `json:"id"`
+		}
+		_ = json.Unmarshal(created.Data, &idHolder)
+		go s.postCreateHook(ctx, idHolder.ID, data)
 	}
 
 	return &PatientResponse{Data: created.Data}, nil

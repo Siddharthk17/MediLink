@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;background-color:#f9fafb;">
+<div style="background:#ffffff;border-radius:8px;padding:32px;border:1px solid #e5e7eb;">
+<div style="text-align:center;margin-bottom:24px;">
+<h1 style="color:#1a73e8;font-size:24px;margin:0;">MediLink</h1>
+<p style="color:#6b7280;font-size:14px;margin:4px 0 0;">Health Platform</p>
+</div>
+<h2 style="color:#1a73e8;font-size:20px;">Lab Report Processed Successfully</h2>
+<p>Dear {{.FullName}},</p>
+<p>Your lab report has been processed and is now available for review.</p>
+<div style="background:#f0f7ff;border-left:4px solid #1a73e8;padding:16px;margin:20px 0;border-radius:4px;">
+<p style="margin:4px 0;"><strong>Report ID:</strong> {{.ReportID}}</p>
+<p style="margin:4px 0;"><strong>Observations:</strong> {{.ObservationsCount}} results found</p>
+{{if .HasAbnormal}}<p style="margin:4px 0;color:#dc2626;"><strong>⚠ Abnormal Results:</strong> {{.AbnormalCount}} result(s) outside normal range</p>{{end}}
+</div>
+{{if .HasAbnormal}}<p style="color:#dc2626;"><strong>Important:</strong> Some results are outside the normal range. Please consult your healthcare provider for interpretation.</p>{{end}}
+<div style="text-align:center;margin:28px 0;">
+<a href="{{.PortalURL}}" style="background-color:#1a73e8;color:#ffffff;padding:12px 32px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;">View Report</a>
+</div>
+<p style="color:#6b7280;font-size:12px;margin-top:32px;border-top:1px solid #e5e7eb;padding-top:16px;">This is an automated notification from MediLink. Please do not reply to this email. If you have questions about your results, contact your healthcare provider.</p>
+</div>
+</body>
+</html>

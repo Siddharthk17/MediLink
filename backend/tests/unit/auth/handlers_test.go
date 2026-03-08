@@ -260,6 +260,9 @@ func (m *mockEmailSvc) SendDocumentProcessingFailed(context.Context, string, str
 func (m *mockEmailSvc) SendDocumentNeedsReview(context.Context, string, string, string) error {
 	return nil
 }
+func (m *mockEmailSvc) SendTemplated(context.Context, string, string, string, map[string]interface{}) error {
+	return nil
+}
 
 // Mock AuditLogger
 

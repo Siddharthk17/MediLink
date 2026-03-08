@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/rs/zerolog"
 
@@ -10,20 +11,30 @@ import (
 )
 
 // NewLLMExtractor returns the appropriate LLM implementation based on config.
+// Gemini is PRIMARY — always tried first. Ollama is fallback.
 func NewLLMExtractor(cfg *config.Config, logger zerolog.Logger) (LLMExtractor, error) {
-	if cfg.Ollama.BaseURL != "" {
-		ollama := NewOllamaExtractor(cfg.Ollama.BaseURL, cfg.Ollama.Model, logger)
-		if ollama.Health(context.Background()) {
-			logger.Info().Msg("using Ollama for LLM extraction")
-			return ollama, nil
-		}
-		logger.Warn().Msg("Ollama unreachable, falling back to Gemini")
-	}
-
 	if cfg.Gemini.APIKey != "" {
-		logger.Info().Msg("using Gemini for LLM extraction")
+		logger.Info().
+			Str("provider", "gemini").
+			Str("model", cfg.Gemini.Model).
+			Msg("using Gemini as primary LLM extractor")
 		return NewGeminiExtractor(cfg.Gemini.APIKey, logger), nil
 	}
 
-	return nil, fmt.Errorf("no LLM provider available: set OLLAMA_BASE_URL or GEMINI_API_KEY")
+	if cfg.Ollama.BaseURL != "" {
+		extractor := NewOllamaExtractor(cfg.Ollama.BaseURL, cfg.Ollama.Model, logger)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if extractor.Health(ctx) {
+			logger.Info().
+				Str("provider", "ollama").
+				Str("model", cfg.Ollama.Model).
+				Msg("using Ollama as fallback LLM extractor")
+			return extractor, nil
+		}
+		logger.Warn().Str("url", cfg.Ollama.BaseURL).Msg("Ollama configured but unreachable")
+	}
+
+	return nil, fmt.Errorf(
+		"no LLM provider available: set GEMINI_API_KEY or a reachable OLLAMA_BASE_URL")
 }

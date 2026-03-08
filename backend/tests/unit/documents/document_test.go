@@ -215,6 +215,9 @@ func (s *mockStorageClient) DeleteFile(_ context.Context, _, _ string) error {
 }
 
 func (s *mockStorageClient) Health(_ context.Context) bool { return true }
+func (s *mockStorageClient) UploadWithKey(_ context.Context, _, _ string, _ io.Reader, _ string, _ int64) error {
+	return nil
+}
 
 // ──────────────────────────────────────────────────────────────
 // Mock: OCREngine
@@ -1726,6 +1729,9 @@ func (s *trackingStorageClient) DeleteFile(ctx context.Context, b, k string) err
 	return s.inner.DeleteFile(ctx, b, k)
 }
 func (s *trackingStorageClient) Health(ctx context.Context) bool { return true }
+func (s *trackingStorageClient) UploadWithKey(_ context.Context, _, _ string, _ io.Reader, _ string, _ int64) error {
+	return nil
+}
 
 type trackingJobRepo struct {
 	inner    *mockJobRepo

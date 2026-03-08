@@ -48,6 +48,17 @@ func (s *ResendEmailService) loadTemplates() {
 		"templates/account_locked/en.html",
 		"templates/account_locked/hi.html",
 		"templates/account_locked/mr.html",
+		"templates/document_complete/en.html",
+		"templates/document_complete/hi.html",
+		"templates/document_complete/mr.html",
+		"templates/document_failed/en.html",
+		"templates/document_failed/hi.html",
+		"templates/document_failed/mr.html",
+		"templates/new_prescription/en.html",
+		"templates/lab_result_ready/en.html",
+		"templates/lab_result_ready/hi.html",
+		"templates/lab_result_ready/mr.html",
+		"templates/consent_request/en.html",
 	}
 
 	for _, path := range templatePaths {
@@ -223,4 +234,41 @@ func (s *ResendEmailService) SendDocumentNeedsReview(ctx context.Context, toEmai
 	s.logger.Info().Str("job_id", jobID).Str("email", toEmail).Msg("document needs manual review notification")
 	return s.sendEmail(ctx, toEmail, "MediLink - Lab Report Needs Review",
 		fmt.Sprintf("<p>Hello %s,</p><p>Your lab report (Job ID: %s) has been partially processed and requires manual review. A clinician will review it shortly.</p>", fullName, jobID))
+}
+
+// subjectForTemplate returns a subject line for a given template name.
+func subjectForTemplate(name string) string {
+	switch name {
+	case "document_complete":
+		return "MediLink - Lab Report Processed"
+	case "document_failed":
+		return "MediLink - Lab Report Processing Issue"
+	case "new_prescription":
+		return "MediLink - New Prescription"
+	case "lab_result_ready":
+		return "MediLink - Lab Results Ready"
+	case "consent_request":
+		return "MediLink - Consent Request"
+	default:
+		return "MediLink Notification"
+	}
+}
+
+// SendTemplated sends an email using a named template with arbitrary data.
+func (s *ResendEmailService) SendTemplated(ctx context.Context, toEmail, templateName, lang string, data map[string]interface{}) error {
+	if lang == "" {
+		lang = "en"
+	}
+	templatePath := fmt.Sprintf("templates/%s/%s.html", templateName, lang)
+
+	html, err := s.renderTemplate(templatePath, data)
+	if err != nil {
+		// Fallback to English
+		html, err = s.renderTemplate(fmt.Sprintf("templates/%s/en.html", templateName), data)
+		if err != nil {
+			return fmt.Errorf("render template %s: %w", templateName, err)
+		}
+	}
+
+	return s.sendEmail(ctx, toEmail, subjectForTemplate(templateName), html)
 }

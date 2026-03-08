@@ -39,12 +39,28 @@ type SearchResult struct {
 	Date         time.Time
 }
 
+// RawSearchHit represents a single ES hit with highlight information.
+type RawSearchHit struct {
+	Index     string
+	ID        string
+	Score     float64
+	Source    map[string]interface{}
+	Highlight map[string][]string
+}
+
+// MultiSearchResponse holds multi-index search results with total count.
+type MultiSearchResponse struct {
+	Total int
+	Hits  []RawSearchHit
+}
+
 // SearchClient defines the interface for search operations.
 type SearchClient interface {
 	IndexResource(ctx context.Context, resourceType, resourceID string, data json.RawMessage) error
 	DeleteResource(ctx context.Context, resourceType, resourceID string) error
 	SearchByPatient(ctx context.Context, patientRef string, resourceTypes []string) ([]SearchResult, error)
 	SearchGlobal(ctx context.Context, query string, patientRef string, count, offset int) ([]SearchResult, error)
+	SearchMultiIndex(ctx context.Context, indices []string, query map[string]interface{}) (*MultiSearchResponse, error)
 	SearchObservationsByCode(ctx context.Context, patientRef, loincCode string) ([]SearchResult, error)
 	EnsureIndices(ctx context.Context) error
 	Health(ctx context.Context) bool
@@ -203,6 +219,65 @@ func (e *ESClient) SearchGlobal(ctx context.Context, queryStr string, patientRef
 	}
 
 	return e.executeSearch(ctx, indices, query)
+}
+
+// SearchMultiIndex executes a custom query against specific indices, returning
+// total hit count and per-hit highlights.
+func (e *ESClient) SearchMultiIndex(ctx context.Context, indices []string, query map[string]interface{}) (*MultiSearchResponse, error) {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(query); err != nil {
+		return nil, fmt.Errorf("failed to encode search query: %w", err)
+	}
+
+	res, err := e.client.Search(
+		e.client.Search.WithContext(ctx),
+		e.client.Search.WithIndex(indices...),
+		e.client.Search.WithBody(&buf),
+		e.client.Search.WithTrackTotalHits(true),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("elasticsearch search failed: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		body, _ := io.ReadAll(res.Body)
+		return nil, fmt.Errorf("elasticsearch search error [%s]: %s", res.Status(), string(body))
+	}
+
+	var decoded struct {
+		Hits struct {
+			Total struct {
+				Value int `json:"value"`
+			} `json:"total"`
+			Hits []struct {
+				Index     string                 `json:"_index"`
+				ID        string                 `json:"_id"`
+				Score     float64                `json:"_score"`
+				Source    map[string]interface{} `json:"_source"`
+				Highlight map[string][]string    `json:"highlight"`
+			} `json:"hits"`
+		} `json:"hits"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&decoded); err != nil {
+		return nil, fmt.Errorf("failed to decode search response: %w", err)
+	}
+
+	hits := make([]RawSearchHit, 0, len(decoded.Hits.Hits))
+	for _, h := range decoded.Hits.Hits {
+		hits = append(hits, RawSearchHit{
+			Index:     h.Index,
+			ID:        h.ID,
+			Score:     h.Score,
+			Source:    h.Source,
+			Highlight: h.Highlight,
+		})
+	}
+
+	return &MultiSearchResponse{
+		Total: decoded.Hits.Total.Value,
+		Hits:  hits,
+	}, nil
 }
 
 // SearchObservationsByCode returns all observations with a specific LOINC code for a patient.
@@ -428,6 +503,11 @@ func (n *NoopSearchClient) SearchByPatient(_ context.Context, _ string, _ []stri
 // SearchGlobal returns empty results.
 func (n *NoopSearchClient) SearchGlobal(_ context.Context, _ string, _ string, _, _ int) ([]SearchResult, error) {
 	return nil, nil
+}
+
+// SearchMultiIndex returns empty results.
+func (n *NoopSearchClient) SearchMultiIndex(_ context.Context, _ []string, _ map[string]interface{}) (*MultiSearchResponse, error) {
+	return &MultiSearchResponse{}, nil
 }
 
 // SearchObservationsByCode returns empty results.

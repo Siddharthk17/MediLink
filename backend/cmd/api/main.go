@@ -18,6 +18,8 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
+	"github.com/Siddharthk17/MediLink/internal/admin"
+	"github.com/Siddharthk17/MediLink/internal/anonymization"
 	"github.com/Siddharthk17/MediLink/internal/audit"
 	"github.com/Siddharthk17/MediLink/internal/auth"
 	"github.com/Siddharthk17/MediLink/internal/clinical"
@@ -30,6 +32,7 @@ import (
 	"github.com/Siddharthk17/MediLink/internal/fhir/validator"
 	"github.com/Siddharthk17/MediLink/internal/middleware"
 	"github.com/Siddharthk17/MediLink/internal/notifications"
+	internalsearch "github.com/Siddharthk17/MediLink/internal/search"
 	"github.com/Siddharthk17/MediLink/pkg/cache"
 	"github.com/Siddharthk17/MediLink/pkg/crypto"
 	"github.com/Siddharthk17/MediLink/pkg/database"
@@ -186,6 +189,14 @@ func main() {
 	)
 	conditionHandler := handlers.NewResourceHandler(conditionService, "Condition", handlers.ConditionSearchParser)
 
+	// Asynq client for task queueing (used by FHIR post-create hooks, documents, admin)
+	redisAddr := cfg.Redis.URL
+	if len(redisAddr) > 8 && redisAddr[:8] == "redis://" {
+		redisAddr = redisAddr[8:]
+	}
+	asynqClient := asynq.NewClient(asynq.RedisClientOpt{Addr: redisAddr})
+	defer asynqClient.Close()
+
 	// MedicationRequest — status transitions + patient + encounter ref validation + drug interaction check
 	medReqRepo := repository.NewBaseRepository(db.SQLX, esClient, log.Logger, "MedicationRequest")
 	medReqService := services.NewResourceService(
@@ -220,6 +231,28 @@ func main() {
 			return nil
 		}),
 		services.WithPreUpdateHook(medReqStatusTransitionHook(&medReqRepo, refValidator)),
+		services.WithPostCreateHook(func(_ context.Context, resourceID string, data json.RawMessage) {
+			patientRef := extractRef(data, "subject")
+			patientFHIRID := strings.TrimPrefix(patientRef, "Patient/")
+			patientUserID := lookupUserIDByFHIRPatient(db, patientFHIRID)
+			if patientUserID == "" {
+				return
+			}
+			// Extract medication name for notification body
+			medName := "a new medication"
+			if rxCode := extractRxNormCode(data); rxCode != "" {
+				medName = rxCode
+			}
+			queuePush(asynqClient, log.Logger, patientUserID, notifications.PushNotification{
+				Title: "New Prescription",
+				Body:  "A new prescription for " + medName + " has been added to your record.",
+				Data: map[string]string{
+					"type":          notifications.PushTypeNewPrescription,
+					"resourceId":    "MedicationRequest/" + resourceID,
+					"patientFhirId": patientFHIRID,
+				},
+			}, notifications.PushTypeNewPrescription)
+		}),
 	)
 	medReqHandler := handlers.NewResourceHandler(medReqService, "MedicationRequest", handlers.MedicationRequestSearchParser)
 
@@ -239,6 +272,34 @@ func main() {
 			}
 			return refValidator.ValidateOptionalReference(ctx, extractRef(data, "encounter"), "Encounter")
 		}),
+		services.WithPostCreateHook(func(_ context.Context, resourceID string, data json.RawMessage) {
+			// Only notify for critical lab results (HH or LL interpretation)
+			interpCode := extractInterpretationCode(data)
+			if interpCode != "HH" && interpCode != "LL" {
+				return
+			}
+			patientRef := extractRef(data, "subject")
+			patientFHIRID := strings.TrimPrefix(patientRef, "Patient/")
+			patientUserID := lookupUserIDByFHIRPatient(db, patientFHIRID)
+			if patientUserID == "" {
+				return
+			}
+			flag := "high"
+			if interpCode == "LL" {
+				flag = "low"
+			}
+			testName := extractObservationCodeDisplay(data)
+			queuePush(asynqClient, log.Logger, patientUserID, notifications.PushNotification{
+				Title: "⚠️ Critical Lab Result",
+				Body:  testName + " is critically " + flag + ".",
+				Data: map[string]string{
+					"type":           notifications.PushTypeCriticalLab,
+					"resourceId":     "Observation/" + resourceID,
+					"patientFhirId":  patientFHIRID,
+					"interpretation": interpCode,
+				},
+			}, notifications.PushTypeCriticalLab)
+		}),
 	)
 	observationHandler := handlers.NewResourceHandler(observationService, "Observation", handlers.ObservationSearchParser)
 
@@ -257,6 +318,22 @@ func main() {
 				return err
 			}
 			return refValidator.ValidateOptionalReference(ctx, extractRef(data, "encounter"), "Encounter")
+		}),
+		services.WithPostCreateHook(func(_ context.Context, resourceID string, data json.RawMessage) {
+			patientRef := extractRef(data, "subject")
+			patientFHIRID := strings.TrimPrefix(patientRef, "Patient/")
+			patientUserID := lookupUserIDByFHIRPatient(db, patientFHIRID)
+			if patientUserID == "" {
+				return
+			}
+			queuePush(asynqClient, log.Logger, patientUserID, notifications.PushNotification{
+				Title: "New Lab Results Available",
+				Body:  "Your lab report results are now in your health record.",
+				Data: map[string]string{
+					"type":       notifications.PushTypeLabResultReady,
+					"resourceId": "DiagnosticReport/" + resourceID,
+				},
+			}, notifications.PushTypeLabResultReady)
 		}),
 	)
 	diagReportHandler := handlers.NewResourceHandler(diagReportService, "DiagnosticReport", handlers.DiagnosticReportSearchParser)
@@ -296,14 +373,6 @@ func main() {
 	labTrendsService := services.NewLabTrendsService(db.SQLX, auditLogger)
 	labTrendsHandler := handlers.NewLabTrendsHandler(labTrendsService)
 
-	// Asynq client for document pipeline
-	redisAddr := cfg.Redis.URL
-	if len(redisAddr) > 8 && redisAddr[:8] == "redis://" {
-		redisAddr = redisAddr[8:]
-	}
-	asynqClient := asynq.NewClient(asynq.RedisClientOpt{Addr: redisAddr})
-	defer asynqClient.Close()
-
 	// MinIO storage
 	var storageClient storage.StorageClient
 	mc, mcErr := storage.NewMinIOClient(
@@ -320,6 +389,31 @@ func main() {
 	// Document pipeline
 	docJobRepo := documents.NewDocumentJobRepository(db.SQLX, log.Logger)
 	documentHandler := documents.NewDocumentHandler(docJobRepo, storageClient, asynqClient, cfg.Storage.Bucket, auditLogger, log.Logger)
+
+	// Admin panel
+	adminRepo := admin.NewAdminRepository(db.SQLX)
+	adminService := admin.NewAdminService(adminRepo, log.Logger)
+	adminHandler := admin.NewAdminHandler(adminService, encryptor, asynqClient, log.Logger)
+
+	// Notification preferences + push service
+	prefRepo := notifications.NewPostgresPrefsRepository(db.SQLX, log.Logger)
+	var pushSvc notifications.PushService
+	fcm, fcmErr := notifications.NewFCMPushService(cfg, prefRepo, log.Logger)
+	if fcmErr != nil {
+		log.Warn().Err(fcmErr).Msg("Firebase unavailable — using noop push service")
+		pushSvc = &notifications.NoopPushService{}
+	} else {
+		pushSvc = fcm
+	}
+	notifHandler := notifications.NewNotificationHandler(prefRepo, pushSvc, log.Logger)
+
+	// Research exports (anonymization)
+	exportRepo := anonymization.NewPostgresExportRepository(db.SQLX)
+	researchHandler := anonymization.NewResearchHandler(exportRepo, storageClient, asynqClient, auditLogger, log.Logger)
+
+	// Unified search
+	searchSvc := internalsearch.NewSearchService(esClient, db.SQLX, log.Logger)
+	searchHandler := internalsearch.NewSearchHandler(searchSvc, db.SQLX, log.Logger)
 
 	// Setup Gin
 	gin.SetMode(cfg.Server.Mode)
@@ -512,7 +606,49 @@ func main() {
 			}
 			c.JSON(http.StatusOK, gin.H{"message": "Physician reinstated"})
 		})
+
+		// Admin panel endpoints
+		adminRoutes.GET("/users", adminHandler.ListUsers)
+		adminRoutes.GET("/users/:userId", adminHandler.GetUser)
+		adminRoutes.PUT("/users/:userId/role", adminHandler.UpdateUserRole)
+		adminRoutes.POST("/researchers/invite", adminHandler.InviteResearcher)
+		adminRoutes.GET("/audit-logs", adminHandler.GetAuditLogs)
+		adminRoutes.GET("/audit-logs/patient/:id", adminHandler.GetPatientAuditLog)
+		adminRoutes.GET("/audit-logs/actor/:id", adminHandler.GetActorAuditLog)
+		adminRoutes.GET("/audit-logs/break-glass", adminHandler.GetBreakGlassEvents)
+		adminRoutes.GET("/stats", adminHandler.GetStats)
+		adminRoutes.GET("/system/health", adminHandler.GetSystemHealth)
+		adminRoutes.POST("/search/reindex", adminHandler.TriggerReindex)
+		adminRoutes.POST("/tasks/cleanup-tokens", adminHandler.TriggerTokenCleanup)
 	}
+
+	// Notifications
+	notif := router.Group("/notifications")
+	notif.Use(auth.AuthMiddleware(jwtSvc))
+	{
+		notif.GET("/preferences", notifHandler.GetPreferences)
+		notif.PUT("/preferences", notifHandler.UpdatePreferences)
+		notif.POST("/fcm-token", notifHandler.RegisterFCMToken)
+		notif.DELETE("/fcm-token", notifHandler.RevokeFCMToken)
+	}
+
+	// Research Exports
+	research := router.Group("/research")
+	research.Use(auth.AuthMiddleware(jwtSvc))
+	research.Use(auth.RequireRole("admin", "researcher"))
+	{
+		research.POST("/export", researchHandler.RequestExport)
+		research.GET("/export/:exportId", researchHandler.GetExportStatus)
+		research.GET("/exports", researchHandler.ListExports)
+		research.DELETE("/export/:exportId", auth.RequireRole("admin"), researchHandler.DeleteExport)
+	}
+
+	// Unified Search
+	router.GET("/search",
+		auth.AuthMiddleware(jwtSvc),
+		consent.ConsentMiddleware(consentEngine, db.SQLX, log.Logger),
+		searchHandler.UnifiedSearch,
+	)
 
 	// Health check endpoints — no auth, no rate limit
 	router.GET("/health", healthCheckHandler(db, redisClient))
@@ -766,4 +902,66 @@ func readinessHandler(db *database.PostgresConnections, redis *cache.RedisClient
 			"checks":    checks,
 		})
 	}
+}
+
+// queuePush enqueues a push notification task via Asynq. Errors are logged, never returned.
+func queuePush(client *asynq.Client, logger zerolog.Logger, userID string, notif notifications.PushNotification, notifType string) {
+	task, err := notifications.NewPushTask(userID, notif, notifType)
+	if err != nil {
+		logger.Error().Err(err).Str("userID", userID).Msg("failed to create push task")
+		return
+	}
+	if _, err := client.Enqueue(task, asynq.Queue("notifications")); err != nil {
+		logger.Error().Err(err).Str("userID", userID).Msg("failed to enqueue push task")
+	}
+}
+
+// lookupUserIDByFHIRPatient resolves a user ID from a FHIR Patient reference.
+func lookupUserIDByFHIRPatient(db *database.PostgresConnections, patientFHIRID string) string {
+	var userID string
+	err := db.SQLX.Get(&userID, "SELECT id::text FROM users WHERE fhir_patient_id = $1", patientFHIRID)
+	if err != nil {
+		return ""
+	}
+	return userID
+}
+
+// extractInterpretationCode extracts the first interpretation code from an Observation.
+func extractInterpretationCode(data json.RawMessage) string {
+	var obs struct {
+		Interpretation []struct {
+			Coding []struct {
+				Code string `json:"code"`
+			} `json:"coding"`
+		} `json:"interpretation"`
+	}
+	if err := json.Unmarshal(data, &obs); err != nil {
+		return ""
+	}
+	if len(obs.Interpretation) > 0 && len(obs.Interpretation[0].Coding) > 0 {
+		return obs.Interpretation[0].Coding[0].Code
+	}
+	return ""
+}
+
+// extractObservationCodeDisplay extracts the display text from an Observation's code.
+func extractObservationCodeDisplay(data json.RawMessage) string {
+	var obs struct {
+		Code struct {
+			Text   string `json:"text"`
+			Coding []struct {
+				Display string `json:"display"`
+			} `json:"coding"`
+		} `json:"code"`
+	}
+	if err := json.Unmarshal(data, &obs); err != nil {
+		return "Lab result"
+	}
+	if obs.Code.Text != "" {
+		return obs.Code.Text
+	}
+	if len(obs.Code.Coding) > 0 && obs.Code.Coding[0].Display != "" {
+		return obs.Code.Coding[0].Display
+	}
+	return "Lab result"
 }

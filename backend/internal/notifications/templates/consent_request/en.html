@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;background-color:#f9fafb;">
+<div style="background:#ffffff;border-radius:8px;padding:32px;border:1px solid #e5e7eb;">
+<div style="text-align:center;margin-bottom:24px;">
+<h1 style="color:#1a73e8;font-size:24px;margin:0;">MediLink</h1>
+<p style="color:#6b7280;font-size:14px;margin:4px 0 0;">Health Platform</p>
+</div>
+<h2 style="color:#1a73e8;font-size:20px;">Consent Request</h2>
+<p>Dear {{.PatientName}},</p>
+<p>Dr. {{.PhysicianName}} from <strong>{{.OrgName}}</strong> is requesting access to your medical records on MediLink.</p>
+<div style="background:#f0f7ff;border-left:4px solid #1a73e8;padding:16px;margin:20px 0;border-radius:4px;">
+<p style="margin:4px 0;"><strong>Physician:</strong> Dr. {{.PhysicianName}}</p>
+<p style="margin:4px 0;"><strong>Organization:</strong> {{.OrgName}}</p>
+<p style="margin:4px 0;"><strong>Purpose:</strong> {{.Purpose}}</p>
+</div>
+<p>You can grant or deny this request through the MediLink app or patient portal. Only you can authorize access to your medical data.</p>
+<div style="text-align:center;margin:28px 0;">
+<a href="{{.PortalURL}}" style="background-color:#1a73e8;color:#ffffff;padding:12px 32px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;">Review Request</a>
+</div>
+<p style="color:#6b7280;font-size:12px;margin-top:32px;border-top:1px solid #e5e7eb;padding-top:16px;">This is an automated notification from MediLink. Please do not reply to this email. Your medical data is protected by end-to-end encryption.</p>
+</div>
+</body>
+</html>
