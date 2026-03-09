@@ -1,0 +1,33 @@
+# Minimal dev profile — only core services needed for frontend development
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up postgres redis migrate api
+#
+# This avoids pulling minio, elasticsearch, grafana, prometheus, etc.
+# The API will start but document upload/OCR features won't work without minio.
+
+services:
+  api:
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - MINIO_ENDPOINT=
+
+  # Disable services that require missing images
+  elasticsearch:
+    profiles: ["full"]
+  minio:
+    profiles: ["full"]
+  minio-init:
+    profiles: ["full"]
+  prometheus:
+    profiles: ["full"]
+  grafana:
+    profiles: ["full"]
+  asynqmon:
+    profiles: ["full"]
+  nginx:
+    profiles: ["full"]
+  worker:
+    profiles: ["full"]

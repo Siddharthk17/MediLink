@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   api:
     build:
@@ -7,7 +5,7 @@ services:
       dockerfile: Dockerfile
       target: api
     ports:
-      - "8080:8080"
+      - "8580:8080"
     environment:
       - DATABASE_URL=postgres://MediLink:MediLink_dev@postgres:5432/MediLink?sslmode=disable
       - REDIS_URL=redis://redis:6379
@@ -20,13 +18,20 @@ services:
       - MINIO_ACCESS_KEY=MediLink
       - MINIO_SECRET_KEY=MediLink_minio_dev
       - MINIO_BUCKET=medilink-lab-reports
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - OLLAMA_MODEL=llama3.1
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
     restart: unless-stopped
 
   migrate:
@@ -49,17 +54,21 @@ services:
     environment:
       - DATABASE_URL=postgres://MediLink:MediLink_dev@postgres:5432/MediLink?sslmode=disable
       - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=dev-secret-change-in-production-minimum-32-chars
+      - ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
       - APP_ENV=development
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=MediLink
       - MINIO_SECRET_KEY=MediLink_minio_dev
       - MINIO_BUCKET=medilink-lab-reports
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - OLLAMA_MODEL=llama3.1
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
     depends_on:
-      - api
-      - minio
-      - redis
+      api:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
   postgres:
@@ -71,7 +80,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5532:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U MediLink -d MediLink"]
       interval: 5s
@@ -84,7 +93,7 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - "6379:6379"
+      - "6479:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -100,7 +109,7 @@ services:
     volumes:
       - elasticsearch_data:/usr/share/elasticsearch/data
     ports:
-      - "9200:9200"
+      - "9280:9200"
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
       interval: 10s
@@ -116,8 +125,8 @@ services:
     volumes:
       - minio_data:/data
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9050:9000"
+      - "9051:9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 10s
@@ -130,7 +139,7 @@ services:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
     ports:
-      - "9090:9090"
+      - "9190:9090"
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -139,38 +148,31 @@ services:
     image: grafana/grafana:latest
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=MediLink_grafana
-      - GF_SERVER_ROOT_URL=http://localhost/grafana
+      - GF_SERVER_ROOT_URL=http://localhost:8180/grafana
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
     volumes:
       - grafana_data:/var/lib/grafana
       - ./infra/grafana/dashboards:/etc/grafana/provisioning/dashboards
       - ./infra/grafana/datasources:/etc/grafana/provisioning/datasources
     ports:
-      - "3100:3000"
+      - "3150:3000"
     depends_on:
       - prometheus
 
   asynqmon:
     image: hibiken/asynqmon:latest
     ports:
-      - "8081:8080"
+      - "8581:8080"
     environment:
       - REDIS_ADDR=redis:6379
     depends_on:
       - redis
 
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    restart: unless-stopped
-
   minio-init:
     image: minio/mc:latest
     depends_on:
-      - minio
+      minio:
+        condition: service_healthy
     entrypoint: >
       /bin/sh -c "
       /usr/bin/mc alias set myminio http://minio:9000 MediLink MediLink_minio_dev;
@@ -185,9 +187,10 @@ services:
     volumes:
       - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf
     ports:
-      - "80:80"
+      - "8180:80"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 volumes:
   postgres_data:
@@ -196,4 +199,3 @@ volumes:
   minio_data:
   prometheus_data:
   grafana_data:
-  ollama_data:

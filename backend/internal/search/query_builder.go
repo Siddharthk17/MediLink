@@ -6,11 +6,12 @@ import (
 
 // SearchFilters holds role-based and temporal filters for ES queries.
 type SearchFilters struct {
-	ActorRole     string
-	PatientFHIRID string     // for patient role — always their own ID
-	PatientRef    string     // from ?patient= param
-	DateFrom      *time.Time
-	DateTo        *time.Time
+	ActorRole            string
+	PatientFHIRID        string     // for patient role — always their own ID
+	PatientRef           string     // from ?patient= param
+	ConsentedPatientRefs []string   // for physician role — all consented patient refs
+	DateFrom             *time.Time
+	DateTo               *time.Time
 }
 
 var indexByType = map[string]string{
@@ -101,6 +102,10 @@ func buildFilters(f SearchFilters) []interface{} {
 		if f.PatientRef != "" {
 			filters = append(filters, map[string]interface{}{
 				"term": map[string]interface{}{"patientRef": f.PatientRef},
+			})
+		} else if len(f.ConsentedPatientRefs) > 0 {
+			filters = append(filters, map[string]interface{}{
+				"terms": map[string]interface{}{"patientRef": f.ConsentedPatientRefs},
 			})
 		}
 	case "admin":

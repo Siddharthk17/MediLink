@@ -3,6 +3,7 @@ package audit
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -72,6 +73,15 @@ INSERT INTO audit_logs (
 	$12, $13, $14
 )`
 
+// nullableIP converts an empty IP string to a sql.NullString so Postgres
+// receives NULL instead of an invalid empty-string INET value.
+func nullableIP(ip string) interface{} {
+	if ip == "" {
+		return sql.NullString{}
+	}
+	return ip
+}
+
 // Log writes an audit entry synchronously.
 func (a *PostgresAuditLogger) Log(ctx context.Context, entry AuditEntry) error {
 	_, err := a.db.ExecContext(ctx, insertAuditSQL,
@@ -79,7 +89,7 @@ func (a *PostgresAuditLogger) Log(ctx context.Context, entry AuditEntry) error {
 		entry.ResourceType, entry.ResourceID, entry.Action,
 		entry.PatientRef, entry.Purpose,
 		entry.Success, entry.StatusCode, entry.ErrorMessage,
-		entry.IPAddress, entry.UserAgent, entry.RequestID,
+		nullableIP(entry.IPAddress), entry.UserAgent, entry.RequestID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to write audit log: %w", err)
@@ -141,7 +151,7 @@ func (a *PostgresAuditLogger) flushBatch(entries []AuditEntry) {
 			entry.ResourceType, entry.ResourceID, entry.Action,
 			entry.PatientRef, entry.Purpose,
 			entry.Success, entry.StatusCode, entry.ErrorMessage,
-			entry.IPAddress, entry.UserAgent, entry.RequestID,
+			nullableIP(entry.IPAddress), entry.UserAgent, entry.RequestID,
 		)
 		if err != nil {
 			log.Error().Err(err).Str("action", entry.Action).Msg("failed to flush audit entry")

@@ -238,19 +238,13 @@ func (h *DocumentHandler) ListJobs(c *gin.Context) {
 	actorID := auth.GetActorID(c)
 	actorRole := auth.GetActorRole(c)
 
-	var patientFHIRID string
+	patientFHIRID := c.Query("patientId")
+	listByUploader := false
+
 	if actorRole == "patient" {
 		patientFHIRID = actorID.String()
-	} else {
-		patientFHIRID = c.Query("patientId")
-		if patientFHIRID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"resourceType": "OperationOutcome",
-				"issue": []gin.H{{"severity": "error", "code": "required",
-					"diagnostics": "patientId query parameter required for physicians"}},
-			})
-			return
-		}
+	} else if patientFHIRID == "" {
+		listByUploader = true
 	}
 
 	status := c.DefaultQuery("status", "all")
@@ -267,7 +261,15 @@ func (h *DocumentHandler) ListJobs(c *gin.Context) {
 		}
 	}
 
-	jobs, total, err := h.jobs.ListByPatient(c.Request.Context(), patientFHIRID, status, count, offset)
+	var jobs []*DocumentJob
+	var total int
+	var err error
+
+	if listByUploader {
+		jobs, total, err = h.jobs.ListByUploader(c.Request.Context(), actorID, status, count, offset)
+	} else {
+		jobs, total, err = h.jobs.ListByPatient(c.Request.Context(), patientFHIRID, status, count, offset)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"resourceType": "OperationOutcome",

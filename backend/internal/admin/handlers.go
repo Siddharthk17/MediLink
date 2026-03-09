@@ -15,7 +15,7 @@ import (
 
 // Asynq task type constants for admin-triggered tasks.
 const (
-	TaskSearchReindex  = "search:reindex"
+	TaskSearchReindex  = "tasks:es:reindex"
 	TaskCleanupTokens  = "tokens:cleanup"
 )
 
@@ -353,7 +353,7 @@ func (h *AdminHandler) GetSystemHealth(c *gin.Context) {
 // TriggerReindex handles POST /admin/search/reindex
 func (h *AdminHandler) TriggerReindex(c *gin.Context) {
 	task := asynq.NewTask(TaskSearchReindex, nil)
-	info, err := h.asynqClient.Enqueue(task, asynq.Queue("admin"), asynq.MaxRetry(1), asynq.Timeout(10*time.Minute))
+	info, err := h.asynqClient.Enqueue(task, asynq.Queue("elasticsearch"), asynq.MaxRetry(1), asynq.Timeout(10*time.Minute))
 	if err != nil {
 		writeFHIRError(c, http.StatusInternalServerError, "processing", "failed to enqueue reindex task")
 		return

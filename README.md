@@ -14,7 +14,7 @@ MediLink provides a secure, standards-compliant backend for managing electronic 
 - **Redis** — Caching (consent, RxNorm), rate limiting, JWT blacklist, Asynq broker
 - **Elasticsearch** — Full-text search across FHIR resources
 - **MinIO** — Object storage for lab report PDFs and images
-- **Ollama/Gemini** — LLM extraction of structured lab data from OCR text
+- **Gemini** — LLM extraction of structured lab data from OCR text
 
 ## Features
 
@@ -49,7 +49,7 @@ docker compose up -d
 docker compose run --rm migrate
 
 # Verify
-curl http://localhost:8080/health
+curl http://localhost:8580/health
 ```
 
 ## Running Tests

@@ -87,7 +87,7 @@ return
 
 // Set actor context — never trust client-supplied IDs
 uid, _ := uuid.Parse(claims.UserID)
-c.Set(ActorIDKey, uid)
+c.Set(ActorIDKey, uid.String())
 c.Set(ActorRoleKey, claims.Role)
 c.Set(ActorOrgIDKey, claims.OrgID)
 c.Set(ActorTOTPVerifiedKey, claims.TOTPVerified)
@@ -158,6 +158,11 @@ func GetActorID(c *gin.Context) uuid.UUID {
 if id, exists := c.Get(ActorIDKey); exists {
 if uid, ok := id.(uuid.UUID); ok {
 return uid
+}
+if s, ok := id.(string); ok {
+if uid, err := uuid.Parse(s); err == nil {
+return uid
+}
 }
 }
 return uuid.Nil

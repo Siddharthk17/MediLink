@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -50,11 +51,41 @@ func NewOpenFDAClient(baseURL string, logger zerolog.Logger) *OpenFDAClient {
 	}
 }
 
+// extractGenericName strips dosage, strength, and form from an RxNorm drug name.
+// "amoxicillin 250 MG Oral Capsule" → "amoxicillin"
+// "Metformin Hydrochloride 500 MG" → "Metformin Hydrochloride"
+func extractGenericName(fullName string) string {
+	parts := strings.Fields(fullName)
+	var cleaned []string
+	for _, p := range parts {
+		// Stop at the first numeric token (dosage strength like "250", "500")
+		if len(p) > 0 && p[0] >= '0' && p[0] <= '9' {
+			break
+		}
+		// Skip common dosage-form words
+		lower := strings.ToLower(p)
+		if lower == "mg" || lower == "ml" || lower == "mcg" || lower == "oral" ||
+			lower == "tablet" || lower == "capsule" || lower == "solution" ||
+			lower == "injection" || lower == "cream" || lower == "ointment" ||
+			lower == "drops" || lower == "suspension" || lower == "extended" ||
+			lower == "release" || lower == "delayed" || lower == "chewable" {
+			continue
+		}
+		cleaned = append(cleaned, p)
+	}
+	if len(cleaned) == 0 {
+		return fullName
+	}
+	return strings.Join(cleaned, " ")
+}
+
 // GetDrugInteractions fetches interaction data for a drug from OpenFDA.
 func (c *OpenFDAClient) GetDrugInteractions(ctx context.Context, drugName string) (*DrugLabelResult, error) {
-	url := fmt.Sprintf("%s/drug/label.json?search=drug_interactions:%s&limit=5", c.baseURL, drugName)
+	cleanName := extractGenericName(drugName)
+	searchURL := fmt.Sprintf("%s/drug/label.json?search=drug_interactions:%s&limit=5",
+		c.baseURL, url.QueryEscape(cleanName))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, searchURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("openfda request build: %w", err)
 	}
@@ -72,7 +103,7 @@ func (c *OpenFDAClient) GetDrugInteractions(ctx context.Context, drugName string
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		c.logger.Warn().Int("status", resp.StatusCode).Str("drug", drugName).Msg("OpenFDA non-200 response")
+		c.logger.Warn().Int("status", resp.StatusCode).Str("drug", cleanName).Msg("OpenFDA non-200 response")
 		return &DrugLabelResult{}, nil
 	}
 

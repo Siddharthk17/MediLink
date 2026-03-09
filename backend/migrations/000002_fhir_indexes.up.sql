@@ -1,5 +1,5 @@
 -- GIN index on JSONB data — CRITICAL for performance.
-CREATE INDEX CONCURRENTLY idx_fhir_resources_data_gin
+CREATE INDEX IF NOT EXISTS idx_fhir_resources_data_gin
     ON fhir_resources USING GIN (data);
 
 -- Resource type filter — used on every single query

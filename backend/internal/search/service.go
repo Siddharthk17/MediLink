@@ -73,29 +73,46 @@ func (s *SearchService) Search(ctx context.Context, params SearchParams) (*Searc
 		}
 		filters.PatientFHIRID = params.PatientFHIRID
 	case "physician":
-		if params.PatientRef == "" {
-			return nil, ErrPatientRequired
-		}
-		patientFHIRID := strings.TrimPrefix(params.PatientRef, "Patient/")
 		providerUUID, err := uuid.Parse(params.ActorID)
 		if err != nil {
 			return nil, fmt.Errorf("invalid actor ID: %w", err)
 		}
-		var hasConsent bool
-		err = s.db.GetContext(ctx, &hasConsent,
-			`SELECT EXISTS(
-				SELECT 1 FROM consents c
-				JOIN users u ON c.patient_id = u.id
-				WHERE c.provider_id = $1 AND u.fhir_patient_id = $2
-				AND c.revoked_at IS NULL AND (c.expires_at IS NULL OR c.expires_at > NOW())
-			)`, providerUUID, patientFHIRID)
-		if err != nil {
-			return nil, fmt.Errorf("consent check failed: %w", err)
+		if params.PatientRef != "" {
+			// Searching within a specific patient — verify consent
+			patientFHIRID := strings.TrimPrefix(params.PatientRef, "Patient/")
+			var hasConsent bool
+			err = s.db.GetContext(ctx, &hasConsent,
+				`SELECT EXISTS(
+					SELECT 1 FROM consents c
+					JOIN users u ON c.patient_id = u.id
+					WHERE c.provider_id = $1 AND u.fhir_patient_id = $2
+					AND c.revoked_at IS NULL AND (c.expires_at IS NULL OR c.expires_at > NOW())
+				)`, providerUUID, patientFHIRID)
+			if err != nil {
+				return nil, fmt.Errorf("consent check failed: %w", err)
+			}
+			if !hasConsent {
+				return nil, ErrConsentRequired
+			}
+			filters.PatientRef = params.PatientRef
+		} else {
+			// No patient specified — scope to all consented patients
+			var consentedFHIRIDs []string
+			err = s.db.SelectContext(ctx, &consentedFHIRIDs,
+				`SELECT u.fhir_patient_id FROM consents c
+				 JOIN users u ON c.patient_id = u.id
+				 WHERE c.provider_id = $1 AND c.revoked_at IS NULL
+				 AND (c.expires_at IS NULL OR c.expires_at > NOW())
+				 AND u.fhir_patient_id IS NOT NULL`, providerUUID)
+			if err != nil {
+				return nil, fmt.Errorf("consent lookup failed: %w", err)
+			}
+			refs := make([]string, len(consentedFHIRIDs))
+			for i, fid := range consentedFHIRIDs {
+				refs[i] = "Patient/" + fid
+			}
+			filters.ConsentedPatientRefs = refs
 		}
-		if !hasConsent {
-			return nil, ErrConsentRequired
-		}
-		filters.PatientRef = params.PatientRef
 	case "admin":
 		if params.PatientRef != "" {
 			filters.PatientRef = params.PatientRef

@@ -301,9 +301,9 @@ func (e *consentEngine) RevokeConsent(ctx context.Context, consentID string, act
 		return nil
 	}
 
-	// Only the patient or admin can revoke
-	if actorRole != "admin" && consent.PatientID != actorUUID {
-		return fmt.Errorf("only the patient who granted consent can revoke it")
+	// Only the patient, the provider, or admin can revoke
+	if actorRole != "admin" && consent.PatientID != actorUUID && consent.ProviderID != actorUUID {
+		return fmt.Errorf("only the patient who granted consent or the provider can revoke it")
 	}
 
 	if err := e.repo.RevokeConsent(ctx, consentUUID, actorUUID); err != nil {

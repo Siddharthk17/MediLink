@@ -60,6 +60,7 @@ type AuditLogEntry struct {
 	ID           string    `json:"id" db:"id"`
 	UserID       *string   `json:"userId,omitempty" db:"user_id"`
 	UserRole     string    `json:"userRole" db:"user_role"`
+	UserEmail    string    `json:"userEmail" db:"user_email"`
 	ResourceType string    `json:"resourceType" db:"resource_type"`
 	ResourceID   string    `json:"resourceId" db:"resource_id"`
 	Action       string    `json:"action" db:"action"`
@@ -265,8 +266,10 @@ func (r *AdminRepository) ReinstatePhysician(ctx context.Context, userID string)
 	return nil
 }
 
-const auditLogColumns = `id, user_id, user_role, resource_type, resource_id, action,
-	patient_ref, purpose, success, status_code, ip_address, created_at`
+const auditLogColumns = `a.id, a.user_id, a.user_role, COALESCE(u.email, '') as user_email,
+	a.resource_type, a.resource_id, a.action,
+	a.patient_ref, a.purpose, a.success, a.status_code,
+	COALESCE(a.ip_address::text, '') as ip_address, a.created_at`
 
 // GetAuditLogs returns a paginated, filtered list of audit log entries.
 func (r *AdminRepository) GetAuditLogs(ctx context.Context, filters AuditLogFilters, count, offset int) ([]AuditLogEntry, int, error) {
@@ -275,37 +278,37 @@ func (r *AdminRepository) GetAuditLogs(ctx context.Context, filters AuditLogFilt
 	argIdx := 1
 
 	if filters.ActorID != "" {
-		conditions = append(conditions, fmt.Sprintf("user_id = $%d", argIdx))
+		conditions = append(conditions, fmt.Sprintf("a.user_id = $%d", argIdx))
 		args = append(args, filters.ActorID)
 		argIdx++
 	}
 	if filters.ResourceType != "" {
-		conditions = append(conditions, fmt.Sprintf("resource_type = $%d", argIdx))
+		conditions = append(conditions, fmt.Sprintf("a.resource_type = $%d", argIdx))
 		args = append(args, filters.ResourceType)
 		argIdx++
 	}
 	if filters.Action != "" {
-		conditions = append(conditions, fmt.Sprintf("action = $%d", argIdx))
+		conditions = append(conditions, fmt.Sprintf("a.action = $%d", argIdx))
 		args = append(args, filters.Action)
 		argIdx++
 	}
 	if filters.PatientRef != "" {
-		conditions = append(conditions, fmt.Sprintf("patient_ref = $%d", argIdx))
+		conditions = append(conditions, fmt.Sprintf("a.patient_ref = $%d", argIdx))
 		args = append(args, filters.PatientRef)
 		argIdx++
 	}
 	if filters.From != nil {
-		conditions = append(conditions, fmt.Sprintf("created_at >= $%d", argIdx))
+		conditions = append(conditions, fmt.Sprintf("a.created_at >= $%d", argIdx))
 		args = append(args, *filters.From)
 		argIdx++
 	}
 	if filters.To != nil {
-		conditions = append(conditions, fmt.Sprintf("created_at <= $%d", argIdx))
+		conditions = append(conditions, fmt.Sprintf("a.created_at <= $%d", argIdx))
 		args = append(args, *filters.To)
 		argIdx++
 	}
 	if filters.BreakGlassOnly {
-		conditions = append(conditions, "action = 'break_glass'")
+		conditions = append(conditions, "a.action = 'break_glass'")
 	}
 
 	where := ""
@@ -313,22 +316,24 @@ func (r *AdminRepository) GetAuditLogs(ctx context.Context, filters AuditLogFilt
 		where = "WHERE " + strings.Join(conditions, " AND ")
 	}
 
-	orderBy := "ORDER BY created_at DESC"
+	orderBy := "ORDER BY a.created_at DESC"
 	switch filters.Sort {
 	case "created_at":
-		orderBy = "ORDER BY created_at ASC"
+		orderBy = "ORDER BY a.created_at ASC"
 	case "-created_at":
-		orderBy = "ORDER BY created_at DESC"
+		orderBy = "ORDER BY a.created_at DESC"
 	}
 
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM audit_logs %s", where)
+	fromClause := "audit_logs a LEFT JOIN users u ON a.user_id = u.id"
+
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s %s", fromClause, where)
 	var total int
 	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("failed to count audit logs: %w", err)
 	}
 
-	dataQuery := fmt.Sprintf("SELECT %s FROM audit_logs %s %s LIMIT $%d OFFSET $%d",
-		auditLogColumns, where, orderBy, argIdx, argIdx+1)
+	dataQuery := fmt.Sprintf("SELECT %s FROM %s %s %s LIMIT $%d OFFSET $%d",
+		auditLogColumns, fromClause, where, orderBy, argIdx, argIdx+1)
 	args = append(args, count, offset)
 
 	var entries []AuditLogEntry

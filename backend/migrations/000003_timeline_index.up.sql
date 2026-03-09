@@ -8,9 +8,9 @@ CREATE INDEX idx_observation_loinc
     ON fhir_resources ((data->'code'->'coding'->0->>'code'))
     WHERE resource_type = 'Observation' AND deleted_at IS NULL;
 
--- Encounter date for timeline ordering
+-- Encounter date for timeline ordering (text-based sort, avoids IMMUTABLE cast issue)
 CREATE INDEX idx_encounter_period_start
-    ON fhir_resources (((data->'period'->>'start')::timestamptz) DESC)
+    ON fhir_resources ((data->'period'->>'start') DESC)
     WHERE resource_type = 'Encounter' AND deleted_at IS NULL;
 
 -- MedicationRequest status for drug interaction checker

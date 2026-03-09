@@ -20,6 +20,7 @@ type DocumentJobRepository interface {
 	UpdateCompleted(ctx context.Context, id uuid.UUID, reportID string, obsCreated, loincMapped int, ocrConf float64, llmProvider string) error
 	UpdateAsynqTaskID(ctx context.Context, id uuid.UUID, taskID string) error
 	ListByPatient(ctx context.Context, patientFHIRID string, status string, count, offset int) ([]*DocumentJob, int, error)
+	ListByUploader(ctx context.Context, uploaderID uuid.UUID, status string, count, offset int) ([]*DocumentJob, int, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
@@ -145,4 +146,45 @@ func (r *PostgresDocumentJobRepository) Delete(ctx context.Context, id uuid.UUID
 	_, err := r.db.ExecContext(ctx,
 		`DELETE FROM document_jobs WHERE id = $1`, id)
 	return err
+}
+
+// ListByUploader lists document jobs uploaded by a specific user.
+func (r *PostgresDocumentJobRepository) ListByUploader(ctx context.Context, uploaderID uuid.UUID, status string, count, offset int) ([]*DocumentJob, int, error) {
+	if count <= 0 {
+		count = 20
+	}
+	if count > 100 {
+		count = 100
+	}
+
+	var total int
+	var jobs []*DocumentJob
+
+	if status != "" && status != "all" {
+		err := r.db.GetContext(ctx, &total,
+			`SELECT COUNT(*) FROM document_jobs WHERE uploaded_by = $1 AND status = $2`, uploaderID, status)
+		if err != nil {
+			return nil, 0, err
+		}
+		err = r.db.SelectContext(ctx, &jobs,
+			`SELECT * FROM document_jobs WHERE uploaded_by = $1 AND status = $2 ORDER BY uploaded_at DESC LIMIT $3 OFFSET $4`,
+			uploaderID, status, count, offset)
+		if err != nil {
+			return nil, 0, err
+		}
+	} else {
+		err := r.db.GetContext(ctx, &total,
+			`SELECT COUNT(*) FROM document_jobs WHERE uploaded_by = $1`, uploaderID)
+		if err != nil {
+			return nil, 0, err
+		}
+		err = r.db.SelectContext(ctx, &jobs,
+			`SELECT * FROM document_jobs WHERE uploaded_by = $1 ORDER BY uploaded_at DESC LIMIT $2 OFFSET $3`,
+			uploaderID, count, offset)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+
+	return jobs, total, nil
 }

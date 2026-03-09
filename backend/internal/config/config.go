@@ -17,7 +17,6 @@ type Config struct {
 	Encryption EncryptionConfig
 	OpenFDA    OpenFDAConfig
 	Gemini     GeminiConfig
-	Ollama     OllamaConfig
 	Resend     ResendConfig
 	Sentry     SentryConfig
 	App        AppConfig
@@ -77,12 +76,6 @@ type OpenFDAConfig struct {
 type GeminiConfig struct {
 	APIKey string `mapstructure:"GEMINI_API_KEY"`
 	Model  string `mapstructure:"GEMINI_MODEL"`
-}
-
-// OllamaConfig holds Ollama settings.
-type OllamaConfig struct {
-	BaseURL string `mapstructure:"OLLAMA_BASE_URL"`
-	Model   string `mapstructure:"OLLAMA_MODEL"`
 }
 
 // FirebaseConfig holds Firebase Admin SDK settings.
@@ -149,9 +142,6 @@ func Load() (*Config, error) {
 
 	cfg.Gemini.APIKey = v.GetString("GEMINI_API_KEY")
 
-	cfg.Ollama.BaseURL = v.GetString("OLLAMA_BASE_URL")
-	cfg.Ollama.Model = v.GetString("OLLAMA_MODEL")
-
 	cfg.Resend.APIKey = v.GetString("RESEND_API_KEY")
 	cfg.Resend.FromEmail = v.GetString("RESEND_FROM_EMAIL")
 
@@ -187,8 +177,6 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("JWT_EXPIRY_HOURS", 2)
 	v.SetDefault("JWT_REFRESH_DAYS", 7)
 	v.SetDefault("OPENFDA_BASE_URL", "https://api.fda.gov")
-	v.SetDefault("OLLAMA_BASE_URL", "http://ollama:11434")
-	v.SetDefault("OLLAMA_MODEL", "llama3.1")
 	v.SetDefault("GEMINI_MODEL", "gemini-1.5-flash")
 	v.SetDefault("FIREBASE_SERVICE_ACCOUNT_PATH", "./firebase-adminsdk.json")
 	v.SetDefault("FIREBASE_PROJECT_ID", "")

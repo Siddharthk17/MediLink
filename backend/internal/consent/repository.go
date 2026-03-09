@@ -12,17 +12,19 @@ import (
 )
 
 type Consent struct {
-	ID         uuid.UUID       `db:"id" json:"id"`
-	PatientID  uuid.UUID       `db:"patient_id" json:"patientId"`
-	ProviderID uuid.UUID       `db:"provider_id" json:"providerId"`
-	Scope      json.RawMessage `db:"scope" json:"scope"`
-	GrantedAt  time.Time       `db:"granted_at" json:"grantedAt"`
-	ExpiresAt  *time.Time      `db:"expires_at" json:"expiresAt,omitempty"`
-	RevokedAt  *time.Time      `db:"revoked_at" json:"revokedAt,omitempty"`
-	RevokedBy  *uuid.UUID      `db:"revoked_by" json:"revokedBy,omitempty"`
-	Purpose    string          `db:"purpose" json:"purpose"`
-	Notes      string          `db:"notes" json:"notes,omitempty"`
-	CreatedBy  uuid.UUID       `db:"created_by" json:"createdBy"`
+	ID            uuid.UUID       `db:"id" json:"id"`
+	PatientID     uuid.UUID       `db:"patient_id" json:"patientId"`
+	ProviderID    uuid.UUID       `db:"provider_id" json:"providerId"`
+	Scope         json.RawMessage `db:"scope" json:"scope"`
+	Status        string          `db:"status" json:"status"`
+	GrantedAt     time.Time       `db:"granted_at" json:"grantedAt"`
+	ExpiresAt     *time.Time      `db:"expires_at" json:"expiresAt,omitempty"`
+	RevokedAt     *time.Time      `db:"revoked_at" json:"revokedAt,omitempty"`
+	RevokedBy     *uuid.UUID      `db:"revoked_by" json:"revokedBy,omitempty"`
+	RevokedReason *string         `db:"revoked_reason" json:"revokedReason,omitempty"`
+	Purpose       string          `db:"purpose" json:"purpose"`
+	Notes         string          `db:"notes" json:"notes,omitempty"`
+	CreatedBy     uuid.UUID       `db:"created_by" json:"createdBy"`
 }
 
 type ConsentedPatient struct {
@@ -30,7 +32,10 @@ type ConsentedPatient struct {
 	FHIRPatientID string          `db:"fhir_patient_id" json:"fhirPatientId"`
 	Scope         json.RawMessage `db:"scope" json:"scope"`
 	GrantedAt     time.Time       `db:"granted_at" json:"grantedAt"`
+	ExpiresAt     *time.Time      `db:"expires_at" json:"expiresAt,omitempty"`
+	Status        string          `db:"status" json:"status"`
 	ConsentID     uuid.UUID       `db:"id" json:"consentId"`
+	PatientData   json.RawMessage `db:"patient_data" json:"-"`
 }
 
 type ConsentRepository interface {
@@ -97,7 +102,7 @@ func (r *postgresConsentRepository) GetActiveConsent(ctx context.Context, patien
 }
 
 func (r *postgresConsentRepository) RevokeConsent(ctx context.Context, consentID uuid.UUID, revokedBy uuid.UUID) error {
-	query := `UPDATE consents SET revoked_at = NOW(), revoked_by = $1 WHERE id = $2`
+	query := `UPDATE consents SET revoked_at = NOW(), revoked_by = $1, status = 'revoked' WHERE id = $2`
 	_, err := r.db.ExecContext(ctx, query, revokedBy, consentID)
 	return err
 }
@@ -111,8 +116,12 @@ func (r *postgresConsentRepository) GetPatientConsents(ctx context.Context, pati
 
 func (r *postgresConsentRepository) GetPhysicianPatients(ctx context.Context, providerID uuid.UUID) ([]*ConsentedPatient, error) {
 	var patients []*ConsentedPatient
-	query := `SELECT c.id, c.patient_id, c.scope, c.granted_at, u.fhir_patient_id
+	query := `SELECT c.id, c.patient_id, c.scope, c.granted_at, c.expires_at, c.status,
+                     u.fhir_patient_id,
+                     COALESCE(f.data, '{}'::jsonb) as patient_data
               FROM consents c JOIN users u ON c.patient_id = u.id
+              LEFT JOIN fhir_resources f ON f.resource_id = u.fhir_patient_id
+                AND f.resource_type = 'Patient' AND f.deleted_at IS NULL
               WHERE c.provider_id = $1 AND c.revoked_at IS NULL
               AND (c.expires_at IS NULL OR c.expires_at > NOW())
               ORDER BY c.granted_at DESC`

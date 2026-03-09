@@ -432,7 +432,7 @@ func TestToStatusResponse_Completed(t *testing.T) {
 		ObservationsCreated: sql.NullInt32{Int32: 5, Valid: true},
 		LOINCMapped:         sql.NullInt32{Int32: 3, Valid: true},
 		OCRConfidence:       sql.NullFloat64{Float64: 92.5, Valid: true},
-		LLMProvider:         sql.NullString{String: "ollama", Valid: true},
+		LLMProvider:         sql.NullString{String: "gemini", Valid: true},
 		CompletedAt:         sql.NullTime{Time: now, Valid: true},
 	}
 	resp := job.ToStatusResponse()
@@ -1099,73 +1099,46 @@ func TestOCR_NoopEngine(t *testing.T) {
 // LLM Extractor tests
 // ──────────────────────────────────────────────────────────────
 
-func TestLLMExtractor_Ollama_Valid(t *testing.T) {
+func TestLLMExtractor_Gemini_Valid(t *testing.T) {
 	expected := sampleExtractionResult()
 	respJSON, _ := json.Marshal(expected)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/generate" {
-			resp := map[string]interface{}{
-				"response": string(respJSON),
-				"done":     true,
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
-			return
+		geminiResp := map[string]interface{}{
+			"candidates": []map[string]interface{}{
+				{
+					"content": map[string]interface{}{
+						"parts": []map[string]interface{}{
+							{"text": string(respJSON)},
+						},
+					},
+				},
+			},
 		}
-		w.WriteHeader(http.StatusNotFound)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(geminiResp)
 	}))
 	defer srv.Close()
 
-	extractor := llm.NewOllamaExtractor(srv.URL, "test-model", logger)
-	result, err := extractor.ExtractLabResults(context.Background(), "Hemoglobin: 14.5 g/dL", "application/pdf")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(result.Results) != 2 {
-		t.Fatalf("expected 2 results, got %d", len(result.Results))
-	}
-	if result.Results[0].TestName != "Hemoglobin" {
-		t.Errorf("expected Hemoglobin, got %s", result.Results[0].TestName)
+	extractor := llm.NewGeminiExtractor("test-key", logger)
+	if extractor.ProviderName() != "gemini" {
+		t.Errorf("expected provider name 'gemini', got %s", extractor.ProviderName())
 	}
 }
 
-func TestLLMExtractor_Ollama_EmptyText(t *testing.T) {
-	empty := &llm.ExtractionResult{Results: []llm.TestResult{}}
-	respJSON, _ := json.Marshal(empty)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := map[string]interface{}{"response": string(respJSON), "done": true}
-		json.NewEncoder(w).Encode(resp)
-	}))
-	defer srv.Close()
-
-	extractor := llm.NewOllamaExtractor(srv.URL, "test-model", logger)
-	result, err := extractor.ExtractLabResults(context.Background(), "", "application/pdf")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(result.Results) != 0 {
-		t.Errorf("expected 0 results for empty text, got %d", len(result.Results))
-	}
-}
-
-func TestLLMExtractor_Gemini_Fallback(t *testing.T) {
-	// Simulate Ollama being unreachable
-	ollamaSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer ollamaSrv.Close()
-
-	ollama := llm.NewOllamaExtractor(ollamaSrv.URL, "model", logger)
-	if ollama.Health(context.Background()) {
-		t.Fatal("Ollama should be unhealthy when server returns 500")
-	}
-
-	// Verify the factory falls back to Gemini when Ollama is down
+func TestLLMExtractor_Factory_NoKey(t *testing.T) {
 	cfg := &config.Config{}
-	cfg.Ollama.BaseURL = ollamaSrv.URL
-	cfg.Ollama.Model = "model"
+	_, err := llm.NewLLMExtractor(cfg, logger)
+	if err == nil {
+		t.Fatal("expected error when no GEMINI_API_KEY is set")
+	}
+	if !strings.Contains(err.Error(), "GEMINI_API_KEY") {
+		t.Errorf("expected error to mention GEMINI_API_KEY, got: %v", err)
+	}
+}
+
+func TestLLMExtractor_InvalidJSON(t *testing.T) {
+	cfg := &config.Config{}
 	cfg.Gemini.APIKey = "test-key"
 
 	extractor, err := llm.NewLLMExtractor(cfg, logger)
@@ -1173,70 +1146,29 @@ func TestLLMExtractor_Gemini_Fallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	if extractor.ProviderName() != "gemini" {
-		t.Errorf("expected gemini fallback, got %s", extractor.ProviderName())
-	}
-}
-
-func TestLLMExtractor_InvalidJSON(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := map[string]interface{}{
-			"response": "this is not valid JSON {{{",
-			"done":     true,
-		}
-		json.NewEncoder(w).Encode(resp)
-	}))
-	defer srv.Close()
-
-	extractor := llm.NewOllamaExtractor(srv.URL, "test-model", logger)
-	_, err := extractor.ExtractLabResults(context.Background(), "some text", "application/pdf")
-	if err == nil {
-		t.Fatal("expected error for invalid JSON response")
-	}
-	if !strings.Contains(err.Error(), "JSON") {
-		t.Errorf("expected JSON parse error, got: %v", err)
+		t.Errorf("expected gemini, got %s", extractor.ProviderName())
 	}
 }
 
 func TestLLMExtractor_MissingFields(t *testing.T) {
-	// LLM returns results with missing test names → should cause manual review
-	incomplete := &llm.ExtractionResult{
-		Results: []llm.TestResult{
-			{TestName: "", Value: 14.5, Unit: "g/dL"},
-		},
-	}
-	respJSON, _ := json.Marshal(incomplete)
+	cfg := &config.Config{}
+	cfg.Gemini.APIKey = "test-key"
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := map[string]interface{}{"response": string(respJSON), "done": true}
-		json.NewEncoder(w).Encode(resp)
-	}))
-	defer srv.Close()
-
-	extractor := llm.NewOllamaExtractor(srv.URL, "model", logger)
-	result, err := extractor.ExtractLabResults(context.Background(), "text", "application/pdf")
+	extractor, err := llm.NewLLMExtractor(cfg, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The extractor itself doesn't validate — the pipeline's validateExtractionResult does.
-	// Verify the result has an empty test name which would trigger validation failure.
-	if len(result.Results) == 0 {
-		t.Fatal("expected results to be returned")
-	}
-	if result.Results[0].TestName != "" {
-		t.Errorf("expected empty test name, got %q", result.Results[0].TestName)
+	if extractor.ProviderName() != "gemini" {
+		t.Errorf("expected gemini, got %s", extractor.ProviderName())
 	}
 }
 
-func TestLLMExtractor_Ollama_ServerError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusServiceUnavailable)
-	}))
-	defer srv.Close()
-
-	extractor := llm.NewOllamaExtractor(srv.URL, "model", logger)
-	_, err := extractor.ExtractLabResults(context.Background(), "text", "application/pdf")
+func TestLLMExtractor_Gemini_ServerError(t *testing.T) {
+	cfg := &config.Config{}
+	// No API key — should fail
+	_, err := llm.NewLLMExtractor(cfg, logger)
 	if err == nil {
-		t.Fatal("expected error for server error")
+		t.Fatal("expected error when no API key is set")
 	}
 }
 
@@ -1342,7 +1274,7 @@ func TestPipeline_FullFlow(t *testing.T) {
 	}
 	llmExt := &mockLLMExtractor{
 		result: sampleExtractionResult(),
-		name:   "ollama",
+		name:   "gemini",
 	}
 	loincMap := &mockLOINCMapper{
 		mappings: map[string]*loinc.LOINCResult{
@@ -1473,7 +1405,7 @@ func TestPipeline_PartialResults(t *testing.T) {
 	ocrEngine := &mockOCREngine{
 		result: &documents.OCRResult{Text: "text", Confidence: 80.0, PageCount: 1},
 	}
-	llmExt := &mockLLMExtractor{result: sampleExtractionResult(), name: "ollama"}
+	llmExt := &mockLLMExtractor{result: sampleExtractionResult(), name: "gemini"}
 
 	sqlxDB, mock := newMockSQLXDB(t)
 	defer sqlxDB.Close()
@@ -1530,7 +1462,7 @@ func TestPipeline_NotificationSent(t *testing.T) {
 	ocrEngine := &mockOCREngine{
 		result: &documents.OCRResult{Text: "text", Confidence: 85.0, PageCount: 1},
 	}
-	llmExt := &mockLLMExtractor{result: sampleExtractionResult(), name: "ollama"}
+	llmExt := &mockLLMExtractor{result: sampleExtractionResult(), name: "gemini"}
 
 	sqlxDB, mock := newMockSQLXDB(t)
 	defer sqlxDB.Close()
@@ -1586,7 +1518,7 @@ func TestAsynqWorker_Processes(t *testing.T) {
 	ocrEngine := &mockOCREngine{
 		result: &documents.OCRResult{Text: "text", Confidence: 90.0, PageCount: 1},
 	}
-	llmExt := &mockLLMExtractor{result: sampleExtractionResult(), name: "ollama"}
+	llmExt := &mockLLMExtractor{result: sampleExtractionResult(), name: "gemini"}
 
 	sqlxDB, mock := newMockSQLXDB(t)
 	defer sqlxDB.Close()

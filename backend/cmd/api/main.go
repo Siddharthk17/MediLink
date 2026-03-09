@@ -522,7 +522,7 @@ func main() {
 	consentRoutes.Use(auth.AuthMiddleware(jwtSvc))
 	{
 		consentRoutes.POST("/grant", auth.RequireRole("patient", "admin"), consentHandler.GrantConsent)
-		consentRoutes.DELETE("/:consentId/revoke", auth.RequireRole("patient", "admin"), consentHandler.RevokeConsent)
+		consentRoutes.DELETE("/:consentId/revoke", auth.RequireRole("patient", "physician", "admin"), consentHandler.RevokeConsent)
 		consentRoutes.GET("/my-grants", auth.RequireRole("patient", "admin"), consentHandler.GetMyGrants)
 		consentRoutes.GET("/my-patients", auth.RequireRole("physician", "admin"), consentHandler.GetMyPatients)
 		consentRoutes.GET("/:consentId", consentHandler.GetConsent)

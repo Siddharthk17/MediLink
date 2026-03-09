@@ -112,13 +112,259 @@ func (e *ESClient) indexName(resourceType string) string {
 }
 
 // IndexResource indexes a single FHIR resource.
+// flattenForES converts raw FHIR JSON into a flat document suitable for ES indexing.
+// FHIR uses nested CodeableConcept / Coding / Reference objects, but our ES mappings
+// expect flat keyword/text fields. This function extracts the searchable scalar values.
+func flattenForES(resourceType string, data json.RawMessage) ([]byte, error) {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+
+	doc := map[string]interface{}{
+		"resourceType": resourceType,
+		"id":           raw["id"],
+	}
+
+	// Common fields
+	if v, ok := raw["status"].(string); ok {
+		doc["status"] = v
+	}
+	if v, ok := raw["meta"].(map[string]interface{}); ok {
+		if lu, ok := v["lastUpdated"].(string); ok {
+			doc["lastUpdated"] = lu
+		}
+	}
+
+	// Extract patientRef from subject.reference
+	if subj, ok := raw["subject"].(map[string]interface{}); ok {
+		if ref, ok := subj["reference"].(string); ok {
+			doc["patientRef"] = ref
+		}
+	}
+	// Also check patient.reference (used in some resource types)
+	if pat, ok := raw["patient"].(map[string]interface{}); ok {
+		if ref, ok := pat["reference"].(string); ok {
+			doc["patientRef"] = ref
+		}
+	}
+
+	switch resourceType {
+	case "Patient":
+		if names, ok := raw["name"].([]interface{}); ok && len(names) > 0 {
+			if name, ok := names[0].(map[string]interface{}); ok {
+				if f, ok := name["family"].(string); ok {
+					doc["family"] = f
+				}
+				if given, ok := name["given"].([]interface{}); ok && len(given) > 0 {
+					doc["given"] = given[0]
+				}
+				// Fall back to "text" field if family/given not present
+				if doc["family"] == nil && doc["given"] == nil {
+					if text, ok := name["text"].(string); ok {
+						parts := strings.Fields(text)
+						if len(parts) > 0 {
+							doc["given"] = parts[0]
+						}
+						if len(parts) > 1 {
+							doc["family"] = strings.Join(parts[1:], " ")
+						}
+					}
+				}
+			}
+		}
+		doc["birthDate"] = raw["birthDate"]
+		doc["gender"] = raw["gender"]
+		doc["patientRef"] = "Patient/" + fmt.Sprint(raw["id"])
+
+	case "Practitioner":
+		if names, ok := raw["name"].([]interface{}); ok && len(names) > 0 {
+			if name, ok := names[0].(map[string]interface{}); ok {
+				doc["family"] = name["family"]
+				if given, ok := name["given"].([]interface{}); ok && len(given) > 0 {
+					doc["given"] = given[0]
+				}
+			}
+		}
+		doc["gender"] = raw["gender"]
+
+	case "Encounter":
+		doc["class"] = extractCodingCode(raw["class"])
+		doc["type"] = extractCodeableConceptDisplay(raw["type"])
+		if period, ok := raw["period"].(map[string]interface{}); ok {
+			doc["start"] = period["start"]
+			doc["end"] = period["end"]
+		}
+		if parts, ok := raw["participant"].([]interface{}); ok {
+			for _, p := range parts {
+				if pm, ok := p.(map[string]interface{}); ok {
+					if ind, ok := pm["individual"].(map[string]interface{}); ok {
+						doc["providerRef"] = ind["reference"]
+					}
+				}
+			}
+		}
+		doc["date"] = doc["start"]
+
+	case "Condition":
+		code, display := extractCodeableConcept(raw["code"])
+		doc["code"] = code
+		doc["codeDisplay"] = display
+		doc["clinicalStatus"] = extractCodingCode(raw["clinicalStatus"])
+		if onset, ok := raw["onsetDateTime"].(string); ok {
+			doc["onsetDate"] = onset
+			doc["date"] = onset
+		}
+		if enc, ok := raw["encounter"].(map[string]interface{}); ok {
+			doc["encounterRef"] = enc["reference"]
+		}
+
+	case "Observation":
+		code, display := extractCodeableConcept(raw["code"])
+		doc["code"] = code
+		doc["codeDisplay"] = display
+		if vq, ok := raw["valueQuantity"].(map[string]interface{}); ok {
+			doc["valueQuantity"] = vq["value"]
+			doc["unit"] = vq["unit"]
+		}
+		if ed, ok := raw["effectiveDateTime"].(string); ok {
+			doc["effectiveDate"] = ed
+			doc["date"] = ed
+		}
+		if enc, ok := raw["encounter"].(map[string]interface{}); ok {
+			doc["encounterRef"] = enc["reference"]
+		}
+		if cats, ok := raw["category"].([]interface{}); ok && len(cats) > 0 {
+			doc["category"] = extractCodingCode(cats[0])
+		}
+
+	case "MedicationRequest":
+		if mc, ok := raw["medicationCodeableConcept"].(map[string]interface{}); ok {
+			code, display := extractCodeableConcept(mc)
+			doc["medicationCode"] = code
+			doc["medicationDisplay"] = display
+		}
+		if ao, ok := raw["authoredOn"].(string); ok {
+			doc["authoredOn"] = ao
+			doc["date"] = ao
+		}
+		if req, ok := raw["requester"].(map[string]interface{}); ok {
+			doc["requesterRef"] = req["reference"]
+		}
+
+	case "AllergyIntolerance":
+		code, display := extractCodeableConcept(raw["code"])
+		doc["code"] = code
+		doc["codeDisplay"] = display
+		if r, ok := raw["reaction"].([]interface{}); ok && len(r) > 0 {
+			if rm, ok := r[0].(map[string]interface{}); ok {
+				doc["severity"] = rm["severity"]
+			}
+		}
+		doc["criticality"] = raw["criticality"]
+
+	case "Immunization":
+		code, display := extractCodeableConcept(raw["vaccineCode"])
+		doc["vaccineCode"] = code
+		doc["vaccineDisplay"] = display
+		if od, ok := raw["occurrenceDateTime"].(string); ok {
+			doc["occurrenceDate"] = od
+			doc["date"] = od
+		}
+
+	case "DiagnosticReport":
+		code, display := extractCodeableConcept(raw["code"])
+		doc["code"] = code
+		doc["codeDisplay"] = display
+		if cats, ok := raw["category"].([]interface{}); ok && len(cats) > 0 {
+			doc["category"] = extractCodingCode(cats[0])
+		}
+		if ed, ok := raw["effectiveDateTime"].(string); ok {
+			doc["effectiveDate"] = ed
+			doc["date"] = ed
+		}
+	}
+
+	// Remove nil values to avoid ES mapping errors
+	for k, v := range doc {
+		if v == nil {
+			delete(doc, k)
+		}
+	}
+
+	return json.Marshal(doc)
+}
+
+// extractCodeableConcept extracts the first coding code and display text from a FHIR CodeableConcept.
+func extractCodeableConcept(v interface{}) (code string, display string) {
+	switch cc := v.(type) {
+	case map[string]interface{}:
+		if text, ok := cc["text"].(string); ok {
+			display = text
+		}
+		if codings, ok := cc["coding"].([]interface{}); ok && len(codings) > 0 {
+			if c, ok := codings[0].(map[string]interface{}); ok {
+				if cd, ok := c["code"].(string); ok {
+					code = cd
+				}
+				if d, ok := c["display"].(string); ok && display == "" {
+					display = d
+				}
+			}
+		}
+	}
+	return
+}
+
+// extractCodingCode extracts the code string from a CodeableConcept or Coding object.
+func extractCodingCode(v interface{}) string {
+	switch cc := v.(type) {
+	case string:
+		return cc
+	case map[string]interface{}:
+		// Direct Coding: {code: "AMB", display: "ambulatory"}
+		if c, ok := cc["code"].(string); ok {
+			return c
+		}
+		// CodeableConcept: {coding: [{code: "..."}]}
+		if codings, ok := cc["coding"].([]interface{}); ok && len(codings) > 0 {
+			if cm, ok := codings[0].(map[string]interface{}); ok {
+				if c, ok := cm["code"].(string); ok {
+					return c
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// extractCodeableConceptDisplay extracts display text from a CodeableConcept, handling arrays.
+func extractCodeableConceptDisplay(v interface{}) string {
+	switch arr := v.(type) {
+	case []interface{}:
+		if len(arr) > 0 {
+			_, display := extractCodeableConcept(arr[0])
+			return display
+		}
+	case map[string]interface{}:
+		_, display := extractCodeableConcept(arr)
+		return display
+	}
+	return ""
+}
+
 func (e *ESClient) IndexResource(ctx context.Context, resourceType, resourceID string, data json.RawMessage) error {
 	idx := e.indexName(resourceType)
+
+	flat, err := flattenForES(resourceType, data)
+	if err != nil {
+		return fmt.Errorf("failed to flatten resource for ES: %w", err)
+	}
 
 	req := esapi.IndexRequest{
 		Index:      idx,
 		DocumentID: resourceID,
-		Body:       bytes.NewReader(data),
+		Body:       bytes.NewReader(flat),
 		Refresh:    "false",
 	}
 

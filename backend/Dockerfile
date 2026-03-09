@@ -1,5 +1,5 @@
 # Stage 1: Builder
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 WORKDIR /app
 RUN apk add --no-cache git
 
@@ -15,7 +15,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/MediLink-api ./cm
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/MediLink-worker ./cmd/worker
 
 # Stage 2: Migration runner
-FROM golang:1.22-alpine AS migrate
+FROM golang:1.25-alpine AS migrate
 RUN go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 COPY migrations /migrations
 ENTRYPOINT ["sh", "-c", "migrate -path /migrations -database $DATABASE_URL up"]
@@ -28,6 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr-hin \
     tesseract-ocr-mar \
     ca-certificates \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /bin/MediLink-api /MediLink-api
 EXPOSE 8080
