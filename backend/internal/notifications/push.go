@@ -71,13 +71,13 @@ func (s *fcmPushService) SendToUser(ctx context.Context, userID string, notif Pu
 	if prefs != nil && !s.isTypeEnabled(prefs, notifType) {
 		return nil
 	}
-	if prefs == nil || prefs.FCMToken == "" {
+	if prefs == nil || prefs.FCMToken == nil || *prefs.FCMToken == "" {
 		return nil
 	}
 
 	badge := 1
 	msg := &messaging.Message{
-		Token: prefs.FCMToken,
+		Token: *prefs.FCMToken,
 		Notification: &messaging.Notification{
 			Title:    notif.Title,
 			Body:     notif.Body,

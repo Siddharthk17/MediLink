@@ -19,9 +19,7 @@ import (
 	pkgsearch "github.com/Siddharthk17/MediLink/pkg/search"
 )
 
-// ---------------------------------------------------------------------------
 // Mock SearchClient
-// ---------------------------------------------------------------------------
 
 type mockSearchClient struct {
 	searchMultiIndexFn func(ctx context.Context, indices []string, query map[string]interface{}) (*pkgsearch.MultiSearchResponse, error)
@@ -47,11 +45,9 @@ func (m *mockSearchClient) SearchObservationsByCode(_ context.Context, _, _ stri
 	return nil, nil
 }
 func (m *mockSearchClient) EnsureIndices(_ context.Context) error { return nil }
-func (m *mockSearchClient) Health(_ context.Context) bool        { return true }
+func (m *mockSearchClient) Health(_ context.Context) bool         { return true }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 func init() {
 	gin.SetMode(gin.TestMode)
@@ -115,9 +111,7 @@ func parseBody(t *testing.T, w *httptest.ResponseRecorder) map[string]interface{
 	return body
 }
 
-// ---------------------------------------------------------------------------
 // Handler tests
-// ---------------------------------------------------------------------------
 
 func TestUnifiedSearch_200_AllTypes(t *testing.T) {
 	db, dbMock, err := sqlmock.New()
@@ -450,9 +444,7 @@ func TestSearch_QueriesLogged(t *testing.T) {
 	assert.NoError(t, err, "search query should be logged to search_queries table")
 }
 
-// ---------------------------------------------------------------------------
 // QueryBuilder tests
-// ---------------------------------------------------------------------------
 
 func TestQueryBuilder_NoType_AllIndices(t *testing.T) {
 	indices := internalsearch.IndicesForTypes(nil)
@@ -481,9 +473,7 @@ func TestQueryBuilder_PatientFilter(t *testing.T) {
 	assert.Equal(t, "Patient/p-abc", term["patientRef"])
 }
 
-// ---------------------------------------------------------------------------
 // ResultBuilder tests
-// ---------------------------------------------------------------------------
 
 func TestResultBuilder_ValidFHIRBundle(t *testing.T) {
 	hits := []internalsearch.SearchHit{

@@ -44,7 +44,7 @@ func NewResearchHandler(
 	}
 }
 
-// ── Request / response types ────────────────────────────────────────
+// Request / response types
 
 type exportRequest struct {
 	ResourceTypes []string `json:"resourceTypes" binding:"required,min=1"`
@@ -58,8 +58,7 @@ type exportTaskPayload struct {
 	ExportID string `json:"exportId"`
 }
 
-// ── Handlers ────────────────────────────────────────────────────────
-
+// Handlers
 // RequestExport handles POST /research/export.
 // It validates the body, persists the export record, enqueues the async task,
 // and returns 202 Accepted immediately.

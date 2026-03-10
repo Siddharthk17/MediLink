@@ -80,7 +80,7 @@ func removeMeta(m map[string]interface{}) {
 	delete(m, "meta")
 }
 
-// ── Per-resource anonymizers ────────────────────────────────────────
+// Per-resource anonymizers
 
 // AnonymizePatient removes direct identifiers and generalises birth date.
 func AnonymizePatient(p map[string]interface{}, salt string) map[string]interface{} {

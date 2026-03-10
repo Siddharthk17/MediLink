@@ -14,7 +14,7 @@ import (
 	"github.com/Siddharthk17/MediLink/internal/notifications"
 )
 
-// --- Mock EmailService ---
+// Mock EmailService
 
 type mockEmailService struct {
 	sendTemplateCalled bool
@@ -35,7 +35,7 @@ func (m *mockEmailService) SendConsentGranted(_ context.Context, _ notifications
 func (m *mockEmailService) SendConsentRevoked(_ context.Context, _ notifications.ConsentNotification) error {
 	return nil
 }
-func (m *mockEmailService) SendWelcomePhysician(_ context.Context, _, _ string) error { return nil }
+func (m *mockEmailService) SendWelcomePhysician(_ context.Context, _, _ string) error  { return nil }
 func (m *mockEmailService) SendPhysicianApproved(_ context.Context, _, _ string) error { return nil }
 func (m *mockEmailService) SendAccountLocked(_ context.Context, _, _ string, _ time.Time) error {
 	return nil

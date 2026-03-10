@@ -49,11 +49,25 @@ export default function NotificationsPage() {
   const updateMutation = useMutation({
     mutationFn: (prefs: Partial<NotificationPreferences>) =>
       notificationsAPI.updatePreferences(prefs),
+    onMutate: async (newPrefs) => {
+      await queryClient.cancelQueries({ queryKey: ['notification-preferences'] })
+      const previous = queryClient.getQueryData<NotificationPreferences>(['notification-preferences'])
+      if (previous) {
+        queryClient.setQueryData<NotificationPreferences>(
+          ['notification-preferences'],
+          { ...previous, ...newPrefs }
+        )
+      }
+      return { previous }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notification-preferences'] })
       toast.success('Preferences updated')
     },
-    onError: () => {
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['notification-preferences'], context.previous)
+      }
       toast.error('Failed to update preferences')
     },
   })

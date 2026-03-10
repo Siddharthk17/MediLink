@@ -70,12 +70,12 @@ func main() {
 
 	users := []seedUser{
 		{
-			email:          "admin@medilink.dev",
-			password:       "Admin@Medi2026!",
-			fullName:       "System Administrator",
-			role:           "admin",
-			status:         "active",
-			phone:          "+91-9000000001",
+			email:    "admin@medilink.dev",
+			password: "Admin@Medi2026!",
+			fullName: "System Administrator",
+			role:     "admin",
+			status:   "active",
+			phone:    "+91-9000000001",
 		},
 		{
 			email:          "dr.sharma@medilink.dev",
@@ -108,24 +108,24 @@ func main() {
 			phone:          "+91-9000000004",
 		},
 		{
-			email:          "patient.meera@medilink.dev",
-			password:       "Patient@Medi2026!",
-			fullName:       "Meera Krishnan",
-			role:           "patient",
-			status:         "active",
-			dob:            "1990-06-15",
-			gender:         "Female",
-			phone:          "+91-9000000005",
+			email:    "patient.meera@medilink.dev",
+			password: "Patient@Medi2026!",
+			fullName: "Meera Krishnan",
+			role:     "patient",
+			status:   "active",
+			dob:      "1990-06-15",
+			gender:   "Female",
+			phone:    "+91-9000000005",
 		},
 		{
-			email:          "patient.rahul@medilink.dev",
-			password:       "Patient@Medi2026!",
-			fullName:       "Rahul Verma",
-			role:           "patient",
-			status:         "active",
-			dob:            "1985-03-22",
-			gender:         "Male",
-			phone:          "+91-9000000006",
+			email:    "patient.rahul@medilink.dev",
+			password: "Patient@Medi2026!",
+			fullName: "Rahul Verma",
+			role:     "patient",
+			status:   "active",
+			dob:      "1985-03-22",
+			gender:   "Male",
+			phone:    "+91-9000000006",
 		},
 	}
 
@@ -244,64 +244,37 @@ func main() {
 		fmt.Printf("✓ Created %s: %s (%s) [%s]\n", u.role, u.fullName, u.email, u.status)
 	}
 
-	// ── Seed consent records: patients grant access to Dr. Sharma ──
+	// Seed consent records: patients grant access to Dr. Sharma
 	seedConsents(ctx, db.SQLX)
 
-	// ── Seed FHIR clinical data for timeline ──
+	// Seed FHIR clinical data for timeline
 	seedClinicalData(ctx, db.SQLX)
 
-	// ── Seed additional consents (both patients → Dr. Patel) ──
+	// Seed additional consents (both patients → Dr. Patel)
 	seedAdditionalConsents(ctx, db.SQLX)
 
-	// ── Seed Rahul's clinical data ──
+	// Seed Rahul's clinical data
 	seedRahulClinicalData(ctx, db.SQLX)
 
-	// ── Seed extra lab observations for Meera (for lab trends) ──
+	// Seed extra lab observations for Meera (for lab trends)
 	seedMeeraLabTrends(ctx, db.SQLX)
 
-	// ── Seed document jobs ──
+	// Seed document jobs
 	seedDocumentJobs(ctx, db.SQLX)
 
-	// ── Seed audit logs ──
+	// Seed audit logs
 	seedAuditLogs(ctx, db.SQLX)
 
-	// ── Seed notification preferences ──
+	// Seed notification preferences
 	seedNotificationPreferences(ctx, db.SQLX)
 
-	// ── Seed drug interactions and classes ──
+	// Seed drug interactions and classes
 	seedDrugData(ctx, db.SQLX)
-
-	fmt.Println("\n══════════════════════════════════════════════")
-	fmt.Println("  MediLink Test Credentials")
-	fmt.Println("══════════════════════════════════════════════")
-	fmt.Println()
-	fmt.Println("  ADMIN:")
-	fmt.Println("    Email:    admin@medilink.dev")
-	fmt.Println("    Password: Admin@Medi2026!")
-	fmt.Println()
-	fmt.Println("  PHYSICIANS (active):")
-	fmt.Println("    Email:    dr.sharma@medilink.dev")
-	fmt.Println("    Password: Doctor@Medi2026!")
-	fmt.Println()
-	fmt.Println("    Email:    dr.patel@medilink.dev")
-	fmt.Println("    Password: Doctor@Medi2026!")
-	fmt.Println()
-	fmt.Println("  PHYSICIAN (pending approval):")
-	fmt.Println("    Email:    dr.pending@medilink.dev")
-	fmt.Println("    Password: Doctor@Medi2026!")
-	fmt.Println()
-	fmt.Println("  PATIENTS:")
-	fmt.Println("    Email:    patient.meera@medilink.dev")
-	fmt.Println("    Password: Patient@Medi2026!")
-	fmt.Println()
-	fmt.Println("    Email:    patient.rahul@medilink.dev")
-	fmt.Println("    Password: Patient@Medi2026!")
-	fmt.Println("══════════════════════════════════════════════")
 
 	os.Exit(0)
 }
 
-// ── helper to look up a user by email ──
+// helper to look up a user by email
 type userRef struct {
 	ID            string  `db:"id"`
 	FHIRPatientID *string `db:"fhir_patient_id"`
@@ -318,7 +291,7 @@ func lookupUser(ctx context.Context, db *sqlx.DB, email string) (*userRef, error
 	return &u, nil
 }
 
-// ── helper to insert FHIR resource if not exists ──
+// helper to insert FHIR resource if not exists
 func insertFHIR(ctx context.Context, db *sqlx.DB, resType, resID, data, patientRef, createdBy string) {
 	var exists bool
 	_ = db.GetContext(ctx, &exists,
@@ -339,7 +312,7 @@ func insertFHIR(ctx context.Context, db *sqlx.DB, resType, resID, data, patientR
 }
 
 func seedConsents(ctx context.Context, db *sqlx.DB) {
-	fmt.Println("\n── Seeding consent records ──")
+	fmt.Println("\nSeeding consent records")
 
 	patients := []string{"patient.meera@medilink.dev", "patient.rahul@medilink.dev"}
 	physicians := []string{"dr.sharma@medilink.dev"}
@@ -385,7 +358,7 @@ func seedConsents(ctx context.Context, db *sqlx.DB) {
 }
 
 func seedClinicalData(ctx context.Context, db *sqlx.DB) {
-	fmt.Println("\n── Seeding FHIR clinical data ──")
+	fmt.Println("\nSeeding FHIR clinical data")
 
 	meera, err := lookupUser(ctx, db, "patient.meera@medilink.dev")
 	if err != nil || meera.FHIRPatientID == nil {
@@ -565,11 +538,9 @@ func seedClinicalData(ctx context.Context, db *sqlx.DB) {
 	}
 }
 
-// ═══════════════════════════════════════════════════════════════
 // Additional consents: both patients → Dr. Patel
-// ═══════════════════════════════════════════════════════════════
 func seedAdditionalConsents(ctx context.Context, db *sqlx.DB) {
-	fmt.Println("\n── Seeding additional consent records ──")
+	fmt.Println("\nSeeding additional consent records")
 
 	drPatel, err := lookupUser(ctx, db, "dr.patel@medilink.dev")
 	if err != nil {
@@ -606,11 +577,9 @@ func seedAdditionalConsents(ctx context.Context, db *sqlx.DB) {
 	}
 }
 
-// ═══════════════════════════════════════════════════════════════
 // Clinical data for Rahul
-// ═══════════════════════════════════════════════════════════════
 func seedRahulClinicalData(ctx context.Context, db *sqlx.DB) {
-	fmt.Println("\n── Seeding Rahul's clinical data ──")
+	fmt.Println("\nSeeding Rahul's clinical data")
 
 	rahul, err := lookupUser(ctx, db, "patient.rahul@medilink.dev")
 	if err != nil || rahul.FHIRPatientID == nil {
@@ -802,11 +771,9 @@ func seedRahulClinicalData(ctx context.Context, db *sqlx.DB) {
 	}`, allergy1, patientRef), patientRef, drID)
 }
 
-// ═══════════════════════════════════════════════════════════════
 // Extra lab observations for Meera (historical data for lab trends)
-// ═══════════════════════════════════════════════════════════════
 func seedMeeraLabTrends(ctx context.Context, db *sqlx.DB) {
-	fmt.Println("\n── Seeding Meera's lab trend data ──")
+	fmt.Println("\nSeeding Meera's lab trend data")
 
 	meera, err := lookupUser(ctx, db, "patient.meera@medilink.dev")
 	if err != nil || meera.FHIRPatientID == nil {
@@ -822,7 +789,10 @@ func seedMeeraLabTrends(ctx context.Context, db *sqlx.DB) {
 	drID := drSharma.ID
 
 	// HbA1c historical readings (4548-4) — creates a trend
-	hba1cReadings := []struct{ date string; value float64 }{
+	hba1cReadings := []struct {
+		date  string
+		value float64
+	}{
 		{"2025-07-15T09:00:00Z", 8.1},
 		{"2025-10-10T09:00:00Z", 7.6},
 		{"2026-03-01T09:00:00Z", 7.0},
@@ -841,7 +811,10 @@ func seedMeeraLabTrends(ctx context.Context, db *sqlx.DB) {
 	}
 
 	// Creatinine historical readings (2160-0)
-	creatReadings := []struct{ date string; value float64 }{
+	creatReadings := []struct {
+		date  string
+		value float64
+	}{
 		{"2025-07-15T09:00:00Z", 0.8},
 		{"2025-10-10T09:00:00Z", 0.9},
 		{"2026-01-15T09:00:00Z", 0.85},
@@ -861,7 +834,10 @@ func seedMeeraLabTrends(ctx context.Context, db *sqlx.DB) {
 	}
 
 	// Hemoglobin (718-7)
-	hbReadings := []struct{ date string; value float64 }{
+	hbReadings := []struct {
+		date  string
+		value float64
+	}{
 		{"2025-07-15T09:00:00Z", 11.8},
 		{"2025-10-10T09:00:00Z", 12.1},
 		{"2026-01-15T09:00:00Z", 12.4},
@@ -881,7 +857,10 @@ func seedMeeraLabTrends(ctx context.Context, db *sqlx.DB) {
 	}
 
 	// TSH (3016-3)
-	tshReadings := []struct{ date string; value float64 }{
+	tshReadings := []struct {
+		date  string
+		value float64
+	}{
 		{"2025-10-10T09:00:00Z", 3.2},
 		{"2026-01-15T09:00:00Z", 2.8},
 		{"2026-03-01T09:00:00Z", 2.5},
@@ -900,7 +879,10 @@ func seedMeeraLabTrends(ctx context.Context, db *sqlx.DB) {
 	}
 
 	// ALT (1742-6)
-	altReadings := []struct{ date string; value float64 }{
+	altReadings := []struct {
+		date  string
+		value float64
+	}{
 		{"2025-10-10T09:00:00Z", 22},
 		{"2026-01-15T09:00:00Z", 25},
 		{"2026-03-01T09:00:00Z", 20},
@@ -919,7 +901,10 @@ func seedMeeraLabTrends(ctx context.Context, db *sqlx.DB) {
 	}
 
 	// Cholesterol (2093-3)
-	cholReadings := []struct{ date string; value float64 }{
+	cholReadings := []struct {
+		date  string
+		value float64
+	}{
 		{"2025-07-15T09:00:00Z", 210},
 		{"2025-10-10T09:00:00Z", 198},
 		{"2026-01-15T09:00:00Z", 190},
@@ -981,11 +966,9 @@ func seedMeeraLabTrends(ctx context.Context, db *sqlx.DB) {
 	}`, med2, patientRef), patientRef, drID)
 }
 
-// ═══════════════════════════════════════════════════════════════
 // Document Jobs — various statuses for testing
-// ═══════════════════════════════════════════════════════════════
 func seedDocumentJobs(ctx context.Context, db *sqlx.DB) {
-	fmt.Println("\n── Seeding document jobs ──")
+	fmt.Println("\nSeeding document jobs")
 
 	meera, err := lookupUser(ctx, db, "patient.meera@medilink.dev")
 	if err != nil || meera.FHIRPatientID == nil {
@@ -1035,7 +1018,7 @@ func seedDocumentJobs(ctx context.Context, db *sqlx.DB) {
 			status: "completed", uploadedBy: drSharma.ID,
 			uploadedAt: now.Add(-45 * 24 * time.Hour), completedAt: timePtr(now.Add(-45*24*time.Hour + 3*time.Minute)),
 			processingAt: timePtr(now.Add(-45*24*time.Hour + 30*time.Second)),
-			obsCreated: intPtr(8), loincMapped: intPtr(6), ocrConfidence: floatPtr(0.94),
+			obsCreated:   intPtr(8), loincMapped: intPtr(6), ocrConfidence: floatPtr(0.94),
 			llmProvider: ptr("gemini-1.5-flash"), fhirReportID: ptr(uuid.New().String()),
 		},
 		{
@@ -1044,14 +1027,14 @@ func seedDocumentJobs(ctx context.Context, db *sqlx.DB) {
 			status: "completed", uploadedBy: drSharma.ID,
 			uploadedAt: now.Add(-5 * 24 * time.Hour), completedAt: timePtr(now.Add(-5*24*time.Hour + 2*time.Minute)),
 			processingAt: timePtr(now.Add(-5*24*time.Hour + 20*time.Second)),
-			obsCreated: intPtr(5), loincMapped: intPtr(5), ocrConfidence: floatPtr(0.97),
+			obsCreated:   intPtr(5), loincMapped: intPtr(5), ocrConfidence: floatPtr(0.97),
 			llmProvider: ptr("gemini-1.5-flash"), fhirReportID: ptr(uuid.New().String()),
 		},
 		{
 			patientID: meera.ID, patientFHIRID: *meera.FHIRPatientID,
 			filename: "meera_thyroid_panel_mar2026.jpg", fileSize: 1548800, contentType: "image/jpeg",
 			status: "processing", uploadedBy: drSharma.ID,
-			uploadedAt: now.Add(-30 * time.Minute),
+			uploadedAt:   now.Add(-30 * time.Minute),
 			processingAt: timePtr(now.Add(-28 * time.Minute)),
 		},
 		{
@@ -1060,16 +1043,16 @@ func seedDocumentJobs(ctx context.Context, db *sqlx.DB) {
 			status: "completed", uploadedBy: drPatel.ID,
 			uploadedAt: now.Add(-20 * 24 * time.Hour), completedAt: timePtr(now.Add(-20*24*time.Hour + 4*time.Minute)),
 			processingAt: timePtr(now.Add(-20*24*time.Hour + 25*time.Second)),
-			obsCreated: intPtr(6), loincMapped: intPtr(4), ocrConfidence: floatPtr(0.91),
+			obsCreated:   intPtr(6), loincMapped: intPtr(4), ocrConfidence: floatPtr(0.91),
 			llmProvider: ptr("gemini-1.5-flash"), fhirReportID: ptr(uuid.New().String()),
 		},
 		{
 			patientID: rahul.ID, patientFHIRID: *rahul.FHIRPatientID,
 			filename: "rahul_xray_chest_mar2026.png", fileSize: 2097152, contentType: "image/png",
 			status: "failed", uploadedBy: drSharma.ID,
-			uploadedAt: now.Add(-3 * 24 * time.Hour),
+			uploadedAt:   now.Add(-3 * 24 * time.Hour),
 			processingAt: timePtr(now.Add(-3*24*time.Hour + 15*time.Second)),
-			errorMsg: ptr("OCR confidence too low (0.32): unable to extract structured data from X-ray image"),
+			errorMsg:     ptr("OCR confidence too low (0.32): unable to extract structured data from X-ray image"),
 		},
 		{
 			patientID: rahul.ID, patientFHIRID: *rahul.FHIRPatientID,
@@ -1108,11 +1091,9 @@ func seedDocumentJobs(ctx context.Context, db *sqlx.DB) {
 	}
 }
 
-// ═══════════════════════════════════════════════════════════════
 // Audit Logs — sample entries for admin audit-logs page
-// ═══════════════════════════════════════════════════════════════
 func seedAuditLogs(ctx context.Context, db *sqlx.DB) {
-	fmt.Println("\n── Seeding audit log entries ──")
+	fmt.Println("\nSeeding audit log entries")
 
 	var count int
 	_ = db.GetContext(ctx, &count, "SELECT COUNT(*) FROM audit_logs")
@@ -1145,9 +1126,9 @@ func seedAuditLogs(ctx context.Context, db *sqlx.DB) {
 
 	type auditEntry struct {
 		userID, userRole, resType, resID, action, patientRef, purpose, ip string
-		success                                                          bool
-		statusCode                                                       int
-		createdAt                                                        time.Time
+		success                                                           bool
+		statusCode                                                        int
+		createdAt                                                         time.Time
 	}
 
 	entries := []auditEntry{
@@ -1181,11 +1162,9 @@ func seedAuditLogs(ctx context.Context, db *sqlx.DB) {
 	}
 }
 
-// ═══════════════════════════════════════════════════════════════
 // Notification Preferences — for all active users
-// ═══════════════════════════════════════════════════════════════
 func seedNotificationPreferences(ctx context.Context, db *sqlx.DB) {
-	fmt.Println("\n── Seeding notification preferences ──")
+	fmt.Println("\nSeeding notification preferences")
 
 	emails := []string{
 		"admin@medilink.dev",
@@ -1233,11 +1212,9 @@ func seedNotificationPreferences(ctx context.Context, db *sqlx.DB) {
 	}
 }
 
-// ═══════════════════════════════════════════════════════════════
 // Drug Interactions & Drug Classes — for drug checking feature
-// ═══════════════════════════════════════════════════════════════
 func seedDrugData(ctx context.Context, db *sqlx.DB) {
-	fmt.Println("\n── Seeding drug interaction data ──")
+	fmt.Println("\nSeeding drug interaction data")
 
 	var count int
 	_ = db.GetContext(ctx, &count, "SELECT COUNT(*) FROM drug_interactions")

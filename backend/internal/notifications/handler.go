@@ -22,8 +22,11 @@ func NewNotificationHandler(prefRepo NotificationPrefsRepository, pushSvc PushSe
 
 func getActorID(c *gin.Context) string {
 	if id, exists := c.Get("actor_id"); exists {
-		if uid, ok := id.(uuid.UUID); ok {
-			return uid.String()
+		switch v := id.(type) {
+		case string:
+			return v
+		case uuid.UUID:
+			return v.String()
 		}
 	}
 	return ""
@@ -49,6 +52,7 @@ func (h *NotificationHandler) GetPreferences(c *gin.Context) {
 }
 
 // UpdatePreferences updates the current user's notification preferences.
+// Accepts a partial JSON body — only the provided fields are changed.
 // PUT /notifications/preferences
 func (h *NotificationHandler) UpdatePreferences(c *gin.Context) {
 	userID := getActorID(c)
@@ -57,17 +61,63 @@ func (h *NotificationHandler) UpdatePreferences(c *gin.Context) {
 		return
 	}
 
-	var prefs NotificationPreferences
-	if err := c.ShouldBindJSON(&prefs); err != nil {
+	// Parse partial update as a map so missing fields are not zeroed
+	var patch map[string]interface{}
+	if err := c.ShouldBindJSON(&patch); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
-	// Security-critical notifications are always enabled
-	prefs.EmailBreakGlass = true
-	prefs.EmailAccountLocked = true
+	// Fetch existing preferences (creates defaults if none exist)
+	existing, err := h.prefRepo.GetPreferences(c.Request.Context(), userID)
+	if err != nil {
+		h.logger.Error().Err(err).Str("user_id", userID).Msg("failed to get existing preferences")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update preferences"})
+		return
+	}
 
-	if err := h.prefRepo.UpsertPreferences(c.Request.Context(), userID, &prefs); err != nil {
+	// Apply partial updates
+	if v, ok := patch["emailDocumentComplete"]; ok {
+		existing.EmailDocumentComplete = toBool(v)
+	}
+	if v, ok := patch["emailDocumentFailed"]; ok {
+		existing.EmailDocumentFailed = toBool(v)
+	}
+	if v, ok := patch["emailConsentGranted"]; ok {
+		existing.EmailConsentGranted = toBool(v)
+	}
+	if v, ok := patch["emailConsentRevoked"]; ok {
+		existing.EmailConsentRevoked = toBool(v)
+	}
+	if v, ok := patch["pushEnabled"]; ok {
+		existing.PushEnabled = toBool(v)
+	}
+	if v, ok := patch["pushDocumentComplete"]; ok {
+		existing.PushDocumentComplete = toBool(v)
+	}
+	if v, ok := patch["pushNewPrescription"]; ok {
+		existing.PushNewPrescription = toBool(v)
+	}
+	if v, ok := patch["pushLabResultReady"]; ok {
+		existing.PushLabResultReady = toBool(v)
+	}
+	if v, ok := patch["pushConsentRequest"]; ok {
+		existing.PushConsentRequest = toBool(v)
+	}
+	if v, ok := patch["pushCriticalLab"]; ok {
+		existing.PushCriticalLab = toBool(v)
+	}
+	if v, ok := patch["preferredLanguage"]; ok {
+		if s, ok := v.(string); ok {
+			existing.PreferredLanguage = s
+		}
+	}
+
+	// Security-critical notifications are always enabled
+	existing.EmailBreakGlass = true
+	existing.EmailAccountLocked = true
+
+	if err := h.prefRepo.UpsertPreferences(c.Request.Context(), userID, existing); err != nil {
 		h.logger.Error().Err(err).Str("user_id", userID).Msg("failed to update preferences")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update preferences"})
 		return
@@ -76,10 +126,18 @@ func (h *NotificationHandler) UpdatePreferences(c *gin.Context) {
 	// Re-fetch to return the stored state
 	saved, err := h.prefRepo.GetPreferences(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusOK, prefs)
+		c.JSON(http.StatusOK, existing)
 		return
 	}
 	c.JSON(http.StatusOK, saved)
+}
+
+// toBool safely converts an interface{} to bool.
+func toBool(v interface{}) bool {
+	if b, ok := v.(bool); ok {
+		return b
+	}
+	return false
 }
 
 // RegisterFCMToken registers an FCM push token for the current user.

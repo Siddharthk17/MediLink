@@ -39,15 +39,13 @@ var (
 	_ storage.StorageClient           = (*mockStorageClient)(nil)
 	_ documents.DocumentJobRepository = (*mockJobRepo)(nil)
 	_ documents.OCREngine             = (*mockOCREngine)(nil)
-	_ llm.LLMExtractor               = (*mockLLMExtractor)(nil)
+	_ llm.LLMExtractor                = (*mockLLMExtractor)(nil)
 	_ loinc.LOINCMapper               = (*mockLOINCMapper)(nil)
 	_ audit.AuditLogger               = (*mockAuditLogger)(nil)
 	_ notifications.EmailService      = (*mockEmailService)(nil)
 )
 
-// ──────────────────────────────────────────────────────────────
 // Mock: DocumentJobRepository
-// ──────────────────────────────────────────────────────────────
 
 type mockJobRepo struct {
 	mu              sync.Mutex
@@ -170,9 +168,7 @@ func (r *mockJobRepo) Delete(_ context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// ──────────────────────────────────────────────────────────────
 // Mock: StorageClient (with call tracking)
-// ──────────────────────────────────────────────────────────────
 
 type mockStorageClient struct {
 	mu        sync.Mutex
@@ -219,9 +215,7 @@ func (s *mockStorageClient) UploadWithKey(_ context.Context, _, _ string, _ io.R
 	return nil
 }
 
-// ──────────────────────────────────────────────────────────────
 // Mock: OCREngine
-// ──────────────────────────────────────────────────────────────
 
 type mockOCREngine struct {
 	result *documents.OCRResult
@@ -236,9 +230,7 @@ func (o *mockOCREngine) ExtractText(_ context.Context, _ []byte, _ string) (*doc
 }
 func (o *mockOCREngine) Health(_ context.Context) bool { return o.err == nil }
 
-// ──────────────────────────────────────────────────────────────
 // Mock: LLMExtractor
-// ──────────────────────────────────────────────────────────────
 
 type mockLLMExtractor struct {
 	result *llm.ExtractionResult
@@ -259,9 +251,7 @@ func (l *mockLLMExtractor) ProviderName() string {
 	return "mock"
 }
 
-// ──────────────────────────────────────────────────────────────
 // Mock: LOINCMapper
-// ──────────────────────────────────────────────────────────────
 
 type mockLOINCMapper struct {
 	mappings map[string]*loinc.LOINCResult
@@ -282,9 +272,7 @@ func (m *mockLOINCMapper) BulkLookup(ctx context.Context, testNames []string) ma
 	return out
 }
 
-// ──────────────────────────────────────────────────────────────
 // Mock: AuditLogger
-// ──────────────────────────────────────────────────────────────
 
 type mockAuditLogger struct {
 	mu      sync.Mutex
@@ -304,15 +292,13 @@ func (a *mockAuditLogger) LogAsync(e audit.AuditEntry) {
 }
 func (a *mockAuditLogger) Close() {}
 
-// ──────────────────────────────────────────────────────────────
 // Mock: EmailService (with tracking)
-// ──────────────────────────────────────────────────────────────
 
 type mockEmailService struct {
-	mu              sync.Mutex
-	completeCalls   int
-	failedCalls     int
-	reviewCalls     int
+	mu            sync.Mutex
+	completeCalls int
+	failedCalls   int
+	reviewCalls   int
 	notifications.NoopEmailService
 }
 
@@ -335,9 +321,7 @@ func (e *mockEmailService) SendDocumentNeedsReview(_ context.Context, _, _, _ st
 	return nil
 }
 
-// ──────────────────────────────────────────────────────────────
 // Helpers
-// ──────────────────────────────────────────────────────────────
 
 func init() { gin.SetMode(gin.TestMode) }
 
@@ -405,9 +389,7 @@ func sampleExtractionResult() *llm.ExtractionResult {
 	}
 }
 
-// ──────────────────────────────────────────────────────────────
 // ToStatusResponse tests
-// ──────────────────────────────────────────────────────────────
 
 func TestToStatusResponse_Pending(t *testing.T) {
 	job := &documents.DocumentJob{
@@ -485,9 +467,7 @@ func TestToStatusResponse_ErrorMessage(t *testing.T) {
 	}
 }
 
-// ──────────────────────────────────────────────────────────────
 // Handler: UploadDocument
-// ──────────────────────────────────────────────────────────────
 
 func TestUploadDocument_201_PDF(t *testing.T) {
 	repo := newMockJobRepo()
@@ -707,9 +687,7 @@ func TestUploadDocument_500_StorageFails(t *testing.T) {
 	}
 }
 
-// ──────────────────────────────────────────────────────────────
 // Handler: GetJobStatus
-// ──────────────────────────────────────────────────────────────
 
 func TestGetJobStatus_200_Pending(t *testing.T) {
 	actorID := uuid.New()
@@ -831,9 +809,7 @@ func TestGetJobStatus_400_InvalidJobID(t *testing.T) {
 	}
 }
 
-// ──────────────────────────────────────────────────────────────
 // Handler: ListJobs
-// ──────────────────────────────────────────────────────────────
 
 func TestListJobs_200_Paginated(t *testing.T) {
 	actorID := uuid.New()
@@ -898,9 +874,7 @@ func TestListJobs_400_NoPatientID_Physician(t *testing.T) {
 	}
 }
 
-// ──────────────────────────────────────────────────────────────
 // Handler: DeleteJob
-// ──────────────────────────────────────────────────────────────
 
 func TestDeleteJob_204_Failed(t *testing.T) {
 	actorID := uuid.New()
@@ -1008,9 +982,7 @@ func TestDeleteJob_204_NeedsManualReview(t *testing.T) {
 	}
 }
 
-// ──────────────────────────────────────────────────────────────
 // OCR tests
-// ──────────────────────────────────────────────────────────────
 
 func TestOCR_ExtractText_PDF(t *testing.T) {
 	ocr := &mockOCREngine{
@@ -1095,9 +1067,7 @@ func TestOCR_NoopEngine(t *testing.T) {
 	}
 }
 
-// ──────────────────────────────────────────────────────────────
 // LLM Extractor tests
-// ──────────────────────────────────────────────────────────────
 
 func TestLLMExtractor_Gemini_Valid(t *testing.T) {
 	expected := sampleExtractionResult()
@@ -1172,9 +1142,7 @@ func TestLLMExtractor_Gemini_ServerError(t *testing.T) {
 	}
 }
 
-// ──────────────────────────────────────────────────────────────
 // LOINC Mapper tests
-// ──────────────────────────────────────────────────────────────
 
 func TestLOINCMapper_ExactMatch(t *testing.T) {
 	mapper := &mockLOINCMapper{
@@ -1251,9 +1219,7 @@ func TestLOINCMapper_BulkLookup(t *testing.T) {
 	}
 }
 
-// ──────────────────────────────────────────────────────────────
 // Pipeline tests
-// ──────────────────────────────────────────────────────────────
 
 func TestPipeline_FullFlow(t *testing.T) {
 	repo := newMockJobRepo()
@@ -1498,9 +1464,7 @@ func TestPipeline_NotificationSent(t *testing.T) {
 	// This test verifies the service is properly wired and pipeline completes.
 }
 
-// ──────────────────────────────────────────────────────────────
 // Asynq Worker tests
-// ──────────────────────────────────────────────────────────────
 
 func TestAsynqWorker_Processes(t *testing.T) {
 	repo := newMockJobRepo()
@@ -1641,9 +1605,7 @@ func TestAsynqPayload_Serialization(t *testing.T) {
 	}
 }
 
-// ──────────────────────────────────────────────────────────────
 // Tracking wrappers for call-ordering tests
-// ──────────────────────────────────────────────────────────────
 
 type trackingStorageClient struct {
 	inner    *mockStorageClient

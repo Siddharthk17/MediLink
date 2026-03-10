@@ -17,7 +17,7 @@ import (
 	"github.com/Siddharthk17/MediLink/internal/tasks"
 )
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+// helpers
 
 func newTestDB(t *testing.T) (*sqlx.DB, sqlmock.Sqlmock) {
 	t.Helper()
@@ -39,7 +39,7 @@ func newTestRedis(t *testing.T) (*redis.Client, *miniredis.Miniredis) {
 
 var nopLogger = zerolog.Nop()
 
-// ── TokenCleanupTask ─────────────────────────────────────────────────────────
+// TokenCleanupTask
 
 func TestTokenCleanup_DeletesExpiredRefresh(t *testing.T) {
 	db, mock := newTestDB(t)
@@ -109,7 +109,7 @@ func TestTokenCleanup_KeepsValidTokens(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-// ── JobExpiryTask ────────────────────────────────────────────────────────────
+// JobExpiryTask
 
 func TestJobExpiry_StuckProcessing(t *testing.T) {
 	db, mock := newTestDB(t)
@@ -160,7 +160,7 @@ func TestJobExpiry_KeepsRecent(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-// ── ConsentExpiryTask ────────────────────────────────────────────────────────
+// ConsentExpiryTask
 
 func TestConsentExpiry_RevokesExpired(t *testing.T) {
 	db, mock := newTestDB(t)
@@ -233,7 +233,7 @@ func TestConsentExpiry_NilExpiry_NotRevoked(t *testing.T) {
 	assert.True(t, mr.Exists("consent:provider-1:fhir-p1"), "consent with NULL expires_at must not be revoked")
 }
 
-// ── Scheduler ────────────────────────────────────────────────────────────────
+// Scheduler
 
 func TestScheduler_RegistersAllFiveTasks(t *testing.T) {
 	mr, err := miniredis.Run()

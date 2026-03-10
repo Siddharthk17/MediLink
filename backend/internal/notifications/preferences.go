@@ -21,7 +21,8 @@ type NotificationPreferences struct {
 	PushLabResultReady    bool      `json:"pushLabResultReady" db:"push_lab_result_ready"`
 	PushConsentRequest    bool      `json:"pushConsentRequest" db:"push_consent_request"`
 	PushCriticalLab       bool      `json:"pushCriticalLab" db:"push_critical_lab"`
-	FCMToken              string    `json:"-" db:"fcm_token"`
+	FCMToken              *string    `json:"-" db:"fcm_token"`
+	FCMTokenUpdatedAt     *time.Time `json:"-" db:"fcm_token_updated_at"`
 	PreferredLanguage     string    `json:"preferredLanguage" db:"preferred_language"`
 	CreatedAt             time.Time `json:"createdAt" db:"created_at"`
 	UpdatedAt             time.Time `json:"updatedAt" db:"updated_at"`

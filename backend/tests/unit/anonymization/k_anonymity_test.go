@@ -23,7 +23,7 @@ import (
 	"github.com/Siddharthk17/MediLink/internal/auth"
 )
 
-// ── Mocks ────────────────────────────────────────────────────────────
+// Mocks
 
 type mockExportRepo struct{}
 
@@ -90,7 +90,7 @@ func newTestRouter(t *testing.T) *gin.Engine {
 	return r
 }
 
-// ── Age Band ─────────────────────────────────────────────────────────
+// Age Band
 
 func TestAgeBand_AllRanges(t *testing.T) {
 	now := time.Now().Year()
@@ -120,7 +120,7 @@ func TestAgeBand_InvalidInput(t *testing.T) {
 	assert.Equal(t, "unknown", anonymization.AgeBand(""))
 }
 
-// ── K-Anonymity suppression ─────────────────────────────────────────
+// K-Anonymity suppression
 
 func makeRecords(ageBand, gender, condition string, n int) []anonymization.AnonymizedRecord {
 	recs := make([]anonymization.AnonymizedRecord, n)
@@ -187,7 +187,7 @@ func TestKAnonymity_EmptyInput_ReturnsEmpty(t *testing.T) {
 	assert.Equal(t, 0, stats.SuppressedRecords)
 }
 
-// ── Handler tests ───────────────────────────────────────────────────
+// Handler tests
 
 func TestExportRequest_201(t *testing.T) {
 	router := newTestRouter(t)

@@ -21,34 +21,30 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
-// ---------------------------------------------------------------------------
 // Mock crypto.Encryptor
-// ---------------------------------------------------------------------------
 
 type mockEncryptor struct{}
 
-func (m *mockEncryptor) Encrypt(plaintext []byte) ([]byte, error)    { return plaintext, nil }
-func (m *mockEncryptor) Decrypt(ciphertext []byte) ([]byte, error)   { return ciphertext, nil }
-func (m *mockEncryptor) EncryptString(s string) ([]byte, error)      { return []byte(s), nil }
-func (m *mockEncryptor) DecryptString(b []byte) (string, error)      { return string(b), nil }
+func (m *mockEncryptor) Encrypt(plaintext []byte) ([]byte, error)  { return plaintext, nil }
+func (m *mockEncryptor) Decrypt(ciphertext []byte) ([]byte, error) { return ciphertext, nil }
+func (m *mockEncryptor) EncryptString(s string) ([]byte, error)    { return []byte(s), nil }
+func (m *mockEncryptor) DecryptString(b []byte) (string, error)    { return string(b), nil }
 
-// ---------------------------------------------------------------------------
 // Mock admin.Service
-// ---------------------------------------------------------------------------
 
 type mockService struct {
-	listUsersFn          func(ctx context.Context, f admin.UserFilters, count, offset int) ([]admin.UserSummary, int, error)
-	getUserFn            func(ctx context.Context, id string) (*admin.UserDetail, error)
-	updateUserRoleFn     func(ctx context.Context, id, role string) error
-	inviteResearcherFn   func(ctx context.Context, email, by string) error
-	suspendPhysicianFn   func(ctx context.Context, id string) error
-	reinstatePhysicianFn func(ctx context.Context, id string) error
-	getAuditLogsFn       func(ctx context.Context, f admin.AuditLogFilters, count, offset int) ([]admin.AuditLogEntry, int, error)
-	getPatientAuditLogFn func(ctx context.Context, ref string, count, offset int) ([]admin.AuditLogEntry, int, error)
-	getActorAuditLogFn   func(ctx context.Context, id string, count, offset int) ([]admin.AuditLogEntry, int, error)
+	listUsersFn           func(ctx context.Context, f admin.UserFilters, count, offset int) ([]admin.UserSummary, int, error)
+	getUserFn             func(ctx context.Context, id string) (*admin.UserDetail, error)
+	updateUserRoleFn      func(ctx context.Context, id, role string) error
+	inviteResearcherFn    func(ctx context.Context, email, by string) error
+	suspendPhysicianFn    func(ctx context.Context, id string) error
+	reinstatePhysicianFn  func(ctx context.Context, id string) error
+	getAuditLogsFn        func(ctx context.Context, f admin.AuditLogFilters, count, offset int) ([]admin.AuditLogEntry, int, error)
+	getPatientAuditLogFn  func(ctx context.Context, ref string, count, offset int) ([]admin.AuditLogEntry, int, error)
+	getActorAuditLogFn    func(ctx context.Context, id string, count, offset int) ([]admin.AuditLogEntry, int, error)
 	getBreakGlassEventsFn func(ctx context.Context, count, offset int) ([]admin.AuditLogEntry, int, error)
-	getStatsFn           func(ctx context.Context) (*admin.AdminStats, error)
-	pingFn               func(ctx context.Context) error
+	getStatsFn            func(ctx context.Context) (*admin.AdminStats, error)
+	pingFn                func(ctx context.Context) error
 }
 
 func (m *mockService) ListUsers(ctx context.Context, f admin.UserFilters, count, offset int) ([]admin.UserSummary, int, error) {
@@ -124,9 +120,7 @@ func (m *mockService) Ping(ctx context.Context) error {
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 func newHandler(svc admin.Service) *admin.AdminHandler {
 	logger := zerolog.Nop()
@@ -222,9 +216,7 @@ func sampleStats() *admin.AdminStats {
 	return s
 }
 
-// ---------------------------------------------------------------------------
 // Tests
-// ---------------------------------------------------------------------------
 
 func TestListUsers_200_Paginated(t *testing.T) {
 	users := sampleUsers()

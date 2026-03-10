@@ -12,7 +12,7 @@ import (
 	"github.com/Siddharthk17/MediLink/internal/notifications"
 )
 
-// --- Mock NotificationPrefsRepository ---
+// Mock NotificationPrefsRepository
 
 type mockPrefsRepo struct {
 	prefs      *notifications.NotificationPreferences
@@ -40,7 +40,7 @@ func (m *mockPrefsRepo) ClearFCMToken(_ context.Context, _ string) error {
 	return m.clearErr
 }
 
-// --- Mock PushService that records calls ---
+// Mock PushService that records calls
 
 type mockPushService struct {
 	sendCalled     bool
@@ -76,7 +76,7 @@ func (m *mockPushService) RevokeToken(_ context.Context, _ string) error {
 
 func (m *mockPushService) Health(_ context.Context) bool { return true }
 
-// --- fcmPushService wrapper for unit-testing SendToUser logic ---
+// fcmPushService wrapper for unit-testing SendToUser logic
 // We test the real fcmPushService logic by constructing an equivalent
 // service that uses our mock repo. Since fcmPushService is unexported,
 // we test through the exported NoopPushService for register/revoke,
