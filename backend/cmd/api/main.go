@@ -419,6 +419,9 @@ func main() {
 	gin.SetMode(cfg.Server.Mode)
 	router := gin.New()
 
+	// Initialize CORS allowed origins from config
+	middleware.InitCORSOrigins(os.Getenv("CORS_ALLOWED_ORIGINS"))
+
 	// Middleware stack — order matters
 	router.Use(gin.Recovery())
 	router.Use(middleware.RequestIDMiddleware())
@@ -509,7 +512,10 @@ func main() {
 	authProtected := router.Group("/auth")
 	authProtected.Use(auth.AuthMiddleware(jwtSvc))
 	{
-		authProtected.POST("/login/verify-totp", authHandler.VerifyTOTP)
+		authProtected.POST("/login/verify-totp",
+			middleware.AuthRateLimitMiddleware(redisClient.Client, "totp_verify"),
+			authHandler.VerifyTOTP,
+		)
 		authProtected.POST("/logout", authHandler.Logout)
 		authProtected.GET("/me", authHandler.GetMe)
 		authProtected.POST("/password/change", authHandler.ChangePassword)

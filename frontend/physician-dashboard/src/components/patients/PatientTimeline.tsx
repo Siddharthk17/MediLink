@@ -88,7 +88,7 @@ export const PatientTimeline = React.memo(function PatientTimeline({ patientId }
       ) : (
         <div>
           {entries.map((entry, i: number) => (
-            <TimelineEvent key={(entry.resource as any).id} resource={entry.resource as any} isLast={i === entries.length - 1} />
+            <TimelineEvent key={(entry.resource as any).id ?? `timeline-${i}`} resource={entry.resource as any} isLast={i === entries.length - 1} />
           ))}
         </div>
       )}

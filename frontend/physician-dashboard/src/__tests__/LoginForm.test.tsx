@@ -5,6 +5,13 @@ import { LoginForm } from '@/components/auth/LoginForm'
 
 const mockLoginPhysician = vi.fn()
 const mockVerifyTOTP = vi.fn()
+const mockPush = vi.fn()
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: mockPush, replace: vi.fn(), back: vi.fn(), forward: vi.fn(), refresh: vi.fn(), prefetch: vi.fn() }),
+  usePathname: () => '/login',
+  useSearchParams: () => new URLSearchParams(),
+}))
 
 vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: any) => <>{children}</>,

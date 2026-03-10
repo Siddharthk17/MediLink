@@ -2,6 +2,7 @@
 package middleware
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -46,8 +47,10 @@ func RequestLoggingMiddleware(logger zerolog.Logger) gin.HandlerFunc {
 			event = logger.Error()
 		}
 
+		rid, _ := requestID.(string)
+
 		event.
-			Str("request_id", requestID.(string)).
+			Str("request_id", rid).
 			Str("method", c.Request.Method).
 			Str("path", path).
 			Str("query", query).
@@ -59,14 +62,42 @@ func RequestLoggingMiddleware(logger zerolog.Logger) gin.HandlerFunc {
 	}
 }
 
+// allowedOrigins is the set of origins permitted for CORS.
+// Populated once via InitCORSOrigins from the CORS_ALLOWED_ORIGINS env var.
+var allowedOrigins = map[string]bool{
+	"http://localhost:3000": true,
+	"http://localhost:3001": true,
+}
+
+// InitCORSOrigins replaces the default origin allowlist.
+// Pass a comma-separated string of origins (e.g. "https://app.medilink.health,http://localhost:3000").
+func InitCORSOrigins(origins string) {
+	if origins == "" {
+		return
+	}
+	m := make(map[string]bool)
+	for _, o := range strings.Split(origins, ",") {
+		o = strings.TrimSpace(o)
+		if o != "" {
+			m[o] = true
+		}
+	}
+	allowedOrigins = m
+}
+
 // CORSMiddleware handles Cross-Origin Resource Sharing.
 func CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
+		origin := c.GetHeader("Origin")
+		if allowedOrigins[origin] {
+			c.Header("Access-Control-Allow-Origin", origin)
+			c.Header("Access-Control-Allow-Credentials", "true")
+		}
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Request-ID")
 		c.Header("Access-Control-Expose-Headers", "X-Request-ID, Location, ETag")
 		c.Header("Access-Control-Max-Age", "86400")
+		c.Header("Vary", "Origin")
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -15,6 +16,16 @@ import (
 	"github.com/Siddharthk17/MediLink/internal/fhir/repository"
 	fhirerrors "github.com/Siddharthk17/MediLink/pkg/errors"
 )
+
+// fhirBaseURL is the canonical base URL used in FHIR Bundle fullUrl fields.
+var fhirBaseURL = initFHIRBaseURL()
+
+func initFHIRBaseURL() string {
+	if u := os.Getenv("FHIR_BASE_URL"); u != "" {
+		return strings.TrimRight(u, "/")
+	}
+	return "https://api.medilink.health"
+}
 
 // TimelineService provides the patient timeline aggregation API.
 type TimelineService struct {
@@ -153,17 +164,17 @@ func (s *TimelineService) GetTimeline(ctx context.Context, params TimelineParams
 		json.Unmarshal(data, &resourceData)
 
 		entry := map[string]interface{}{
-			"fullUrl":  fmt.Sprintf("https://api.MediLink.health/fhir/R4/%s/%s", resourceType, resourceID),
+			"fullUrl":  fmt.Sprintf("%s/fhir/R4/%s/%s", fhirBaseURL, resourceType, resourceID),
 			"resource": resourceData,
 			"search": map[string]interface{}{
 				"mode": "match",
 				"extension": []map[string]interface{}{
 					{
-						"url":           "https://MediLink.health/fhir/extensions/timeline-date",
+						"url":           "https://medilink.health/fhir/extensions/timeline-date",
 						"valueDateTime": eventDate.Format(time.RFC3339),
 					},
 					{
-						"url":         "https://MediLink.health/fhir/extensions/timeline-type",
+						"url":         "https://medilink.health/fhir/extensions/timeline-type",
 						"valueString": resourceType,
 					},
 				},
@@ -290,13 +301,13 @@ func (s *LabTrendsService) GetLabTrends(ctx context.Context, params LabTrendsPar
 		var data interface{}
 		json.Unmarshal(r.Data, &data)
 		entry := map[string]interface{}{
-			"fullUrl":  fmt.Sprintf("https://api.MediLink.health/fhir/R4/Observation/%s", r.ResourceID),
+			"fullUrl":  fmt.Sprintf("%s/fhir/R4/Observation/%s", fhirBaseURL, r.ResourceID),
 			"resource": data,
 			"search": map[string]interface{}{
 				"mode": "match",
 				"extension": []map[string]interface{}{
 					{
-						"url":       "https://MediLink.health/fhir/extensions/trend-direction",
+						"url":       "https://medilink.health/fhir/extensions/trend-direction",
 						"valueCode": trendDirection,
 					},
 				},

@@ -1,0 +1,410 @@
+================================================================================
+DETAILED FINDINGS WITH EXACT LINE NUMBERS
+================================================================================
+
+FINDING #1: MISSING GEMINI_MODEL CONFIG LOAD 🔴 CRITICAL
+├─ Location: backend/internal/config/config.go, Line 143
+├─ Type: Missing code line
+├─ Current Code (Line 143):
+│  cfg.Gemini.APIKey = v.GetString("GEMINI_API_KEY")
+├─ Missing Line:
+│  cfg.Gemini.Model = v.GetString("GEMINI_MODEL")
+├─ Struct Definition (Line 78):
+│  Model  string `mapstructure:"GEMINI_MODEL"`
+├─ Default Set (Line 180):
+│  v.SetDefault("GEMINI_MODEL", "gemini-1.5-flash")
+├─ Used In: backend/internal/documents/llm/factory.go:16
+│  Str("model", cfg.Gemini.Model)
+└─ Action: Add 1 line after line 143 in config.go
+
+---
+
+FINDING #2: MISSING ELASTICSEARCH_URL DEFAULTS 🔴 CRITICAL
+├─ Location: backend/internal/config/config.go (struct not defined)
+├─ Used In: backend/cmd/api/main.go, Line 99-102
+├─ Current Code:
+│  esAddresses := strings.Split(os.Getenv("ELASTICSEARCH_URL"), ",")
+│  if len(esAddresses) == 0 || esAddresses[0] == "" {
+│      esAddresses = []string{"http://localhost:9200"}
+│  }
+├─ Issue: Direct os.Getenv() call, not in config struct
+├─ Used In Docker:
+│  docker-compose.yml, Line 21:  ELASTICSEARCH_URL=http://elasticsearch:9200
+│  docker-compose.yml, Line 64:  ELASTICSEARCH_URL=http://elasticsearch:9200
+├─ Need To Add:
+│  1. Field to AppConfig struct in config.go
+│  2. Load in Load() function
+│  3. Default in setDefaults()
+└─ Action: Add 3 config lines
+
+---
+
+FINDING #3: HARDCODED DEV CREDENTIALS IN DOCKER-COMPOSE 🔴 CRITICAL
+├─ Location: docker-compose.yml
+├─ Database Credentials:
+│  Line 10:  - DATABASE_URL=postgres://MediLink:MediLink_dev@postgres:5432/MediLink?sslmode=disable
+│  Line 43:  - DATABASE_URL=postgres://MediLink:MediLink_dev@postgres:5432/MediLink?sslmode=disable
+│  Line 55:  - DATABASE_URL=postgres://MediLink:MediLink_dev@postgres:5432/MediLink?sslmode=disable
+│  Line 78-79: POSTGRES_PASSWORD: MediLink_dev
+├─ JWT Secrets:
+│  Line 12:  - JWT_SECRET=dev-secret-change-in-production-minimum-32-chars
+│  Line 57:  - JWT_SECRET=dev-secret-change-in-production-minimum-32-chars
+├─ Encryption Key (all zeros!):
+│  Line 13:  - ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
+│  Line 58:  - ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
+├─ MinIO Credentials:
+│  Line 18:  - MINIO_ACCESS_KEY=MediLink
+│  Line 19:  - MINIO_SECRET_KEY=MediLink_minio_dev
+│  Line 123: MINIO_ROOT_USER: MediLink
+│  Line 124: MINIO_ROOT_PASSWORD: MediLink_minio_dev
+├─ Grafana Password:
+│  Line 150: - GF_SECURITY_ADMIN_PASSWORD=MediLink_grafana
+├─ Solution:
+│  1. Create .env file (add to .gitignore)
+│  2. Use environment variable substitution: ${DATABASE_PASSWORD}
+│  3. Generate random keys for production
+└─ Action: Remove all hardcoded secrets
+
+---
+
+FINDING #4: ZERO-VALUE ENCRYPTION KEY 🔴 CRITICAL
+├─ Location 1: docker-compose.yml, Lines 13 & 58
+│  - ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
+├─ Location 2: backend/internal/config/config.go, Line 180
+│  v.SetDefault("ENCRYPTION_KEY", "0000000000000000000000000000000000000000000000000000000000000000")
+├─ Validation (Line 196-201):
+│  func validate(cfg *Config) error {
+│      if len(cfg.Encryption.Key) != 64 {
+│          return fmt.Errorf("config: ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes), got %d", len(cfg.Encryption.Key))
+│      }
+│  }
+├─ Issue: Validates length but NOT strength
+├─ Impact: AES-256-GCM encryption uses zero key!
+├─ Fix: Add validation after line 200
+│  if cfg.Encryption.Key == "0000000000000000000000000000000000000000000000000000000000000000" {
+│      return fmt.Errorf("config: ENCRYPTION_KEY must not be all zeros (insecure)")
+│  }
+└─ Action: Generate key with: openssl rand -hex 32
+
+---
+
+FINDING #5: DOCKER HEALTHCHECK RACE CONDITION 🟠 HIGH
+├─ Location: docker-compose.yml, Lines 49-72
+├─ Current Sequence:
+│  Line 37-47:   migrate service runs (depends on postgres healthy)
+│  Line 49-73:   worker service runs (depends_on: api service_healthy)
+│  Line 23-35:   api service runs (depends on postgres, redis, elasticsearch)
+├─ Race Condition:
+│  1. migrate might complete AFTER api healthcheck starts
+│  2. api healthcheck hits /health (line 30)
+│  3. healthcheck passes even if migrations incomplete
+│  4. worker starts with incomplete DB schema
+├─ Current Dependencies (Line 22-28):
+│  depends_on:
+│    postgres:
+│      condition: service_healthy
+│    redis:
+│      condition: service_healthy
+│    elasticsearch:
+│      condition: service_healthy
+├─ Missing: migrate dependency!
+├─ Fix: Add to api depends_on:
+│  migrate:
+│    condition: service_completed_successfully
+└─ Action: Add 2 lines to api.depends_on
+
+---
+
+FINDING #6: MISSING ELASTICSEARCH DEPENDENCY IN DEV PROFILE 🟠 HIGH
+├─ Location: docker-compose.dev.yml, Lines 8-15
+├─ Current Code:
+│  api:
+│    depends_on:
+│      postgres:
+│        condition: service_healthy
+│      redis:
+│        condition: service_healthy
+│    environment:
+│      - MINIO_ENDPOINT=
+├─ Issue: Redefines api.depends_on but removes elasticsearch
+├─ Original (from main compose, Line 22-28):
+│  depends_on:
+│    postgres: service_healthy
+│    redis: service_healthy
+│    elasticsearch: service_healthy
+├─ Code Still Requires ES: backend/cmd/api/main.go, Line 104
+├─ Fix: Either
+│  1. Add elasticsearch back to dev profile dependencies, OR
+│  2. Add "profiles: [full]" to elasticsearch in main compose
+└─ Action: Add elasticsearch to dev profile
+
+---
+
+FINDING #7: NGINX GRAFANA SUBPATH MISCONFIGURATION 🟠 HIGH
+├─ Location: infra/nginx/nginx.conf, Lines 22-25
+├─ Current Code:
+│  location /grafana/ {
+│      proxy_pass http://grafana:3000/;
+│      proxy_set_header Host $host;
+│  }
+├─ Issue: Missing subpath headers for Grafana
+├─ Fix: Add after line 24:
+│  proxy_set_header X-Script-Name /grafana;
+│  proxy_set_header X-Forwarded-Prefix /grafana;
+└─ Action: Add 2 headers
+
+---
+
+FINDING #8: NEXT.JS API REWRITE HARDCODED PORT 🟠 MEDIUM
+├─ Location: frontend/physician-dashboard/next.config.ts, Line 8
+├─ Current Code:
+│  destination: `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8580'}/:path*`
+├─ Issues:
+│  1. Fallback is hardcoded localhost:8580
+│  2. Container network uses service name not localhost
+│  3. Should be http://api:8080 in Docker
+├─ Fix: Remove hardcoded fallback OR set env var in Dockerfile
+└─ Action: Update next.config.ts
+
+---
+
+FINDING #9: MISSING HEALTHCHECK FOR NGINX 🟠 MEDIUM
+├─ Location: docker-compose.yml, Lines 185-193
+├─ Current Code:
+│  nginx:
+│    image: nginx:alpine
+│    volumes:
+│      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf
+│    ports:
+│      - "8180:80"
+│    depends_on:
+│      api:
+│        condition: service_healthy
+├─ Missing: healthcheck block
+├─ Fix: Add after line 191:
+│  healthcheck:
+│    test: ["CMD", "curl", "-f", "http://localhost/health"]
+│    interval: 10s
+│    timeout: 5s
+│    retries: 3
+└─ Action: Add 6 lines
+
+---
+
+FINDING #10: MINIO HEALTHCHECK CURL ISSUE 🟠 MEDIUM
+├─ Location: docker-compose.yml, Lines 130-134
+├─ Current Code:
+│  healthcheck:
+│    test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+│    interval: 10s
+│    timeout: 5s
+│    retries: 3
+├─ Issue: curl might not be installed in minio/minio:latest image
+├─ Verify: minio image includes 'mc' (minio client) but not necessarily curl
+├─ Fix: Use minio built-in or add curl to image
+│  Option 1: test: ["CMD", "mc", "ready", "local"]
+│  Option 2: Install curl in image first
+└─ Action: Test or change healthcheck command
+
+---
+
+FINDING #11: MISSING LOINC_MAPPINGS DEFAULT INDEX 🟠 MEDIUM
+├─ Location: backend/migrations/000005_drug_checker.up.sql
+├─ Lines ~95-99:
+│  CREATE INDEX idx_loinc_test_name ON loinc_mappings (test_name_lower);
+│  CREATE INDEX idx_loinc_test_name_gin ON loinc_mappings USING GIN (to_tsvector('english', test_name));
+├─ Issue: B-tree on text field with duplicates is inefficient
+├─ Problem: Multiple entries per test name (different LOINC codes)
+│  e.g., "Hemoglobin" appears with codes: 718-7, 4544-3, etc.
+├─ Fix: Make idx_loinc_test_name composite or use UNIQUE constraint
+└─ Action: Review query pattern and optimize
+
+---
+
+FINDING #12: AUDIT_LOGS IMMUTABILITY NOT ENFORCED 🟡 MEDIUM
+├─ Location: backend/migrations/000001_initial_schema.up.sql, Lines 99-100
+├─ Current Code:
+│  CREATE RULE audit_logs_no_update AS ON UPDATE TO audit_logs DO INSTEAD NOTHING;
+│  CREATE RULE audit_logs_no_delete AS ON DELETE TO audit_logs DO INSTEAD NOTHING;
+├─ Issues:
+│  1. Rules don't prevent TRUNCATE
+│  2. Rules don't prevent superuser bypassing
+│  3. In replication, rules may not replicate reliably
+├─ Better Fix: Use column-level security or database policies
+└─ Action: Review and upgrade to modern approach
+
+---
+
+FINDING #13: MISSING REFRESH TOKEN DEFAULTS 🟡 MEDIUM
+├─ Location: backend/migrations/000004_auth_tables.up.sql, Lines 15-16
+├─ Current Code:
+│  ip_address      INET,
+│  user_agent      TEXT,
+├─ Issue: Should be NOT NULL with defaults
+├─ Fix: Add constraints:
+│  ip_address      INET NOT NULL DEFAULT '127.0.0.1',
+│  user_agent      TEXT NOT NULL DEFAULT '',
+└─ Action: Add defaults for audit trail
+
+---
+
+FINDING #14: SEED JSON INJECTION VULNERABILITY 🟡 MEDIUM
+├─ Location: backend/cmd/seed/main.go, ~Lines 220-230
+├─ Current Pattern:
+│  json := fmt.Sprintf(`{
+│      "resourceType": "Patient",
+│      "name": [{"given": ["%s"]}],
+│      "gender": "%s",
+│      "birthDate": "%s"
+│  }`, u.fullName, strings.ToLower(u.gender), u.dob)
+├─ Issue: No escaping of u.fullName if contains quotes
+├─ Example Attack:
+│  u.fullName = `John"} ` // would break JSON
+├─ Fix: Use json.Marshal() instead of fmt.Sprintf
+└─ Action: Refactor seed JSON generation
+
+---
+
+FINDING #15: MISSING ELASTICSEARCH_URL IN .ENV.EXAMPLE 🟡 MEDIUM
+├─ Location: .env.example, End of file
+├─ Missing Lines After Line ~50:
+│  # Elasticsearch
+│  ELASTICSEARCH_URL=http://localhost:9200
+│  
+│  # Firebase
+│  FIREBASE_SERVICE_ACCOUNT_PATH=./firebase-adminsdk.json
+│  FIREBASE_PROJECT_ID=
+├─ Impact: New developers won't know to set this
+└─ Action: Add to .env.example
+
+---
+
+FINDING #16: PORT MAPPING INCONSISTENCY 🟡 MEDIUM
+├─ Files Involved:
+│  1. docker-compose.yml, Line 8: 8580:8080 (exposed:container)
+│  2. next.config.ts, Line 8: hardcoded localhost:8580
+│  3. cmd/api/main.go, Line 660: cfg.Server.Port (defaults to 8080)
+│  4. .env: PORT=8580 (not set, uses default 8080)
+├─ Inconsistency:
+│  - Container listens on 8080 (default from config)
+│  - Host exposed on 8580 (docker-compose mapping)
+│  - Frontend hardcoded to 8580 (works locally, fails in Docker)
+└─ Action: Document or standardize port usage
+
+---
+
+FINDING #17: MISSING INDEX ON FHIR_RESOURCES.CREATED_AT 🟡 LOW
+├─ Location: backend/migrations/000002_fhir_indexes.up.sql
+├─ Current Timeline Index (Line ~3):
+│  CREATE INDEX idx_fhir_timeline
+│      ON fhir_resources (patient_ref, created_at DESC)
+│      WHERE deleted_at IS NULL;
+├─ Missing: Index for other queries that need created_at
+├─ Problem: "Get all Observations" without patient_ref would scan entire table
+├─ Fix: Add:
+│  CREATE INDEX idx_fhir_resources_type_created
+│      ON fhir_resources (resource_type, created_at DESC)
+│      WHERE deleted_at IS NULL;
+└─ Action: Add index in new migration
+
+---
+
+FINDING #18: MISSING FK ON USERS.ORGANIZATION_ID 🟡 LOW
+├─ Location: backend/migrations/000001_initial_schema.up.sql, Line 59
+├─ Current Code:
+│  organization_id UUID,
+├─ Should Be:
+│  organization_id UUID REFERENCES organizations(id) ON DELETE SET NULL,
+├─ Impact: Orphaned users if organization deleted
+└─ Action: Add FK constraint in migration
+
+---
+
+FINDING #19: MINIO_ENDPOINT EMPTY IN DEV PROFILE 🟡 MEDIUM
+├─ Location: docker-compose.dev.yml, Line 15
+├─ Code:
+│  - MINIO_ENDPOINT=
+├─ Effect: Empty string overrides config default
+├─ Result: Defaults to minio:9000 but service not running in dev
+├─ Fix: Either set to actual endpoint or remove line
+└─ Action: Fix or document dev profile limitations
+
+---
+
+FINDING #20: DOCKERFILE MISSING TLS SUPPORT 🟡 LOW
+├─ Location: backend/Dockerfile, Line 24-32
+├─ Current Packages:
+│  tesseract-ocr \
+│  tesseract-ocr-eng \
+│  tesseract-ocr-hin \
+│  tesseract-ocr-mar \
+│  ca-certificates \
+│  curl \
+├─ Missing for production TLS:
+│  libpq5 \  (PostgreSQL TLS client libraries)
+├─ Fix: Add libpq5 to apt-get install
+└─ Action: Add 1 package
+
+---
+
+FINDING #21: HEALTHCHECK TIMEOUT SHORTNESS 🟡 LOW
+├─ Location: docker-compose.yml, Lines 29-34
+├─ Current Config:
+│  healthcheck:
+│    test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+│    interval: 5s
+│    timeout: 3s
+│    retries: 10
+│    start_period: 10s
+├─ Analysis:
+│  start_period: 10s (grace before checking)
+│  + (retries × interval): 10 × 5s = 50s
+│  = Total: 60s max before failure
+├─ Issue: Timeout is 3s but might not be enough
+├─ Fix: Increase to 5s or 10s
+└─ Action: Test startup time and adjust
+
+---
+
+FINDING #22: TYPESCRIPT SKIPLIBC CHECK 🟡 LOW
+├─ Location: frontend/physician-dashboard/tsconfig.json, Line 6
+├─ Code:
+│  "skipLibCheck": true,
+├─ Impact: Hides type errors in node_modules
+├─ Recommendation: Set to false for stricter checking
+└─ Action: Change to false
+
+---
+
+FINDING #23: SEED DATA MISSING TIMEZONE 🟡 LOW
+├─ Location: backend/cmd/seed/main.go, Lines 116, 126
+├─ Current:
+│  dob: "1990-06-15",
+├─ Should Be:
+│  dob: "1990-06-15T00:00:00+00:00",
+├─ Impact: Timezone info lost when encrypted
+└─ Action: Use RFC3339 format
+
+---
+
+FINDING #24: NO REQUEST ID MIDDLEWARE 🟡 LOW
+├─ Location: backend/cmd/api/main.go
+├─ Issue: Audit logs track request_id but no middleware generates it
+├─ Fix: Add UUID to request context middleware
+├─ Standard Practice: Use github.com/google/uuid
+└─ Action: Add request ID middleware
+
+---
+
+FINDING #25: PROMETHEUS METRICS UNPROTECTED 🟡 LOW
+├─ Location: infra/prometheus/prometheus.yml, Lines 6-9
+├─ Code:
+│  - job_name: 'MediLink-api'
+│    static_configs:
+│      - targets: ['api:8080']
+│    metrics_path: '/metrics'
+├─ Issue: No authentication
+├─ Fix: Add basic auth or network isolation
+└─ Action: Review metrics security policy
+
+================================================================================

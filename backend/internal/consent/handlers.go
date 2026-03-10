@@ -209,7 +209,7 @@ func (h *ConsentHandler) GetConsent(c *gin.Context) {
 		return
 	}
 
-	consent, err := h.engine.(*consentEngine).repo.GetByID(c.Request.Context(), id)
+	consent, err := h.engine.GetConsentByID(c.Request.Context(), id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"resourceType": "OperationOutcome",

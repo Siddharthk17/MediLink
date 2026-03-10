@@ -84,26 +84,33 @@ func (h *SearchHandler) UnifiedSearch(c *gin.Context) {
 	actorID := c.GetString("actor_id")
 	actorRole := c.GetString("actor_role")
 
+	// If consent middleware already resolved a forced patient ref, use it
+	forcedRef := c.GetString("forced_patient_ref")
+
 	// Resolve FHIR patient ID for patient-role actors.
 	var patientFHIRID string
 	if actorRole == "patient" {
-		uid, err := uuid.Parse(actorID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid actor ID"})
-			return
-		}
-		err = h.db.GetContext(c.Request.Context(), &patientFHIRID,
-			"SELECT COALESCE(fhir_patient_id, '') FROM users WHERE id = $1", uid)
-		if err != nil || patientFHIRID == "" {
-			c.JSON(http.StatusForbidden, gin.H{
-				"resourceType": "OperationOutcome",
-				"issue": []gin.H{{
-					"severity":    "error",
-					"code":        "forbidden",
-					"diagnostics": "patient FHIR ID not found",
-				}},
-			})
-			return
+		if forcedRef != "" {
+			patientFHIRID = strings.TrimPrefix(forcedRef, "Patient/")
+		} else {
+			uid, err := uuid.Parse(actorID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid actor ID"})
+				return
+			}
+			err = h.db.GetContext(c.Request.Context(), &patientFHIRID,
+				"SELECT COALESCE(fhir_patient_id, '') FROM users WHERE id = $1", uid)
+			if err != nil || patientFHIRID == "" {
+				c.JSON(http.StatusForbidden, gin.H{
+					"resourceType": "OperationOutcome",
+					"issue": []gin.H{{
+						"severity":    "error",
+						"code":        "forbidden",
+						"diagnostics": "patient FHIR ID not found",
+					}},
+				})
+				return
+			}
 		}
 	}
 

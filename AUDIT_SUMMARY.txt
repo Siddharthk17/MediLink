@@ -1,0 +1,168 @@
+================================================================================
+                    MEDILINK INFRASTRUCTURE AUDIT SUMMARY
+================================================================================
+
+AUDIT DATE: 2025-03-10
+SCOPE: Docker compose, Dockerfile, config, migrations, build setup, env vars
+
+================================================================================
+CRITICAL FINDINGS (4 Issues - MUST FIX IMMEDIATELY)
+================================================================================
+
+[1] MISSING GEMINI_MODEL CONFIG LOAD
+    File: backend/internal/config/config.go, Line 143
+    Issue: Environment variable defined in struct but never loaded
+    Impact: Document processing with Gemini AI will fail silently
+    Fix Time: 2 minutes
+    
+[2] MISSING ELASTICSEARCH_URL DEFAULTS  
+    File: backend/internal/config/config.go
+    Issue: Code hardcodes localhost:9200 fallback instead of using config
+    Impact: Production deployments will try to connect to wrong host
+    Fix Time: 5 minutes
+    
+[3] HARDCODED DEV CREDENTIALS IN DOCKER-COMPOSE
+    Files: docker-compose.yml (lines 10-150)
+    Issue: Database passwords, JWT secrets, and other credentials in plaintext
+    Impact: SECURITY RISK - production data could be compromised
+    Fix Time: 10 minutes (use .env file + secrets management)
+    
+[4] ZERO-VALUE ENCRYPTION KEY
+    File: config.go, Line 180 + docker-compose.yml
+    Issue: ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
+    Impact: All encrypted user data (PII) uses cryptographically invalid key
+    Fix Time: 5 minutes (generate random key with openssl rand -hex 32)
+
+================================================================================
+HIGH PRIORITY (3 Issues - Fix Before Production)
+================================================================================
+
+[5] DOCKER HEALTHCHECK RACE CONDITION
+    File: docker-compose.yml, Lines 66-71
+    Issue: Worker depends on API healthcheck before migrations complete
+    Impact: Worker may start with incomplete database schema
+    
+[6] MISSING ELASTICSEARCH DEPENDENCY IN DEV PROFILE
+    File: docker-compose.dev.yml, Lines 8-15
+    Issue: Dev override removes elasticsearch without removing from code
+    Impact: Dev environment won't match production behavior
+    
+[7] NGINX GRAFANA SUBPATH MISCONFIGURATION
+    File: infra/nginx/nginx.conf, Line 23
+    Issue: Missing proxy headers for subpath routing
+    Impact: Grafana CSS/JS won't load, links will be broken
+
+================================================================================
+MEDIUM PRIORITY (9 Issues - Fix Before Going to Prod)
+================================================================================
+
+[8]  Next.js API URL hardcoded to localhost:8580 (won't work in Docker network)
+[9]  Missing healthcheck for nginx service
+[10] Minio healthcheck uses curl which may not be installed
+[11] Inefficient LOINC lab test name lookup (will cause N+1 queries)
+[12] Audit logs immutability not enforced on TRUNCATE or replicas
+[13] Refresh tokens missing NOT NULL constraints on security fields
+[14] Seed JSON generation vulnerable to injection (no escaping)
+[15] .env.example missing ELASTICSEARCH_URL variable
+[16] Port mapping inconsistency across files
+
+================================================================================
+LOW PRIORITY (9 Issues - Nice to Fix)
+================================================================================
+
+[17] Missing index on fhir_resources(created_at)
+[18] Missing foreign key constraint on users.organization_id
+[19] MINIO_ENDPOINT empty string in dev profile
+[20] Dockerfile missing libpq5 for TLS certificate verification
+[21] Healthcheck timeout may be too short for migrations
+[22] TypeScript skipLibCheck enabled (hides type errors)
+[23] Seed data missing timezone handling
+[24] No request ID middleware for tracing
+[25] Prometheus metrics endpoint unprotected
+
+================================================================================
+ISSUES BY CATEGORY
+================================================================================
+
+CONFIG ISSUES (8):         #1, #2, #15, #16, #19, #22, #23, #25
+SECURITY ISSUES (3):       #3, #4, #12
+DOCKER ISSUES (6):         #5, #6, #7, #9, #10, #21
+DATABASE ISSUES (4):       #11, #12, #13, #17, #18
+FRONTEND ISSUES (1):       #8
+CODE ISSUES (1):           #14
+BEST PRACTICES (1):        #24
+
+================================================================================
+ACTION ITEMS (PRIORITIZED)
+================================================================================
+
+IMMEDIATE (DO TODAY):
+  ☐ Fix #1 - Add cfg.Gemini.Model load
+  ☐ Fix #3 - Move credentials to .env file
+  ☐ Fix #4 - Generate proper encryption key
+
+THIS WEEK:
+  ☐ Fix #2 - Add Elasticsearch to config defaults
+  ☐ Fix #5 - Fix docker healthcheck race condition
+  ☐ Fix #6 - Fix dev profile dependencies
+  ☐ Fix #7 - Fix nginx subpath configuration
+  ☐ Fix #8 - Remove hardcoded API port
+
+BEFORE PRODUCTION:
+  ☐ Fix all MEDIUM priority items (#8-#16)
+  ☐ Run load test with fixed configuration
+  ☐ Verify all env vars are properly documented
+
+NICE TO HAVE:
+  ☐ Fix LOW priority items (#17-#25)
+  ☐ Add comprehensive logging/tracing
+
+================================================================================
+ESTIMATED EFFORT
+================================================================================
+
+Critical Fixes:        ~25 minutes
+High Priority Fixes:   ~15 minutes  
+Medium Priority Fixes: ~80 minutes
+Low Priority Fixes:    ~65 minutes
+                       ─────────────
+TOTAL:                 ~3 hours
+
+================================================================================
+KEY FILES REVIEWED
+================================================================================
+
+✓ docker-compose.yml (202 lines)
+✓ docker-compose.dev.yml (34 lines)
+✓ backend/Dockerfile (48 lines)
+✓ backend/internal/config/config.go (207 lines)
+✓ backend/cmd/api/main.go (first 100 lines + startup)
+✓ backend/cmd/worker/main.go (226 lines)
+✓ backend/cmd/seed/main.go (first 100 lines + seed logic)
+✓ backend/migrations/*.sql (8 migration files)
+✓ frontend/physician-dashboard/next.config.ts (23 lines)
+✓ frontend/physician-dashboard/tsconfig.json (24 lines)
+✓ frontend/physician-dashboard/vitest.config.ts (37 lines)
+✓ frontend/physician-dashboard/package.json (58 lines)
+✓ .env and .env.example (45 lines)
+✓ Makefile (65 lines)
+✓ infra/nginx/nginx.conf (27 lines)
+✓ infra/prometheus/prometheus.yml (10 lines)
+✓ scripts/migrate.sh (13 lines)
+✓ pnpm-workspace.yaml (3 lines)
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. Review this report with the team
+2. Create GitHub issues for each finding
+3. Prioritize and assign to developers
+4. Create test cases to catch similar issues
+5. Document configuration requirements in README
+6. Set up CI/CD checks for config validation
+7. Schedule security review of credentials management
+
+Full detailed report available in: INFRASTRUCTURE_AUDIT.md
+
+================================================================================

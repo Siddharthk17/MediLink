@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Eye, EyeOff, Mail, Lock, Sun, Moon, Shield, Activity } from 'lucide-react'
 import Link from 'next/link'
@@ -42,6 +43,7 @@ export function LoginForm() {
   const [totpError, setTotpError] = useState(false)
   const { theme, toggleTheme } = useUIStore()
   const { setAuth, clearAuth } = useAuthStore()
+  const router = useRouter()
 
   const fetchAndSetUser = async (accessToken: string, refreshToken: string) => {
     document.cookie = `medilink_access_token=${accessToken}; path=/; samesite=strict`
@@ -59,7 +61,7 @@ export function LoginForm() {
       },
       { accessToken, refreshToken }
     )
-    window.location.href = '/dashboard'
+    router.push('/dashboard')
   }
 
   const handleCredentialSubmit = async (e: React.FormEvent) => {

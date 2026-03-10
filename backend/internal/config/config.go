@@ -141,6 +141,7 @@ func Load() (*Config, error) {
 	cfg.OpenFDA.APIKey = v.GetString("OPENFDA_API_KEY")
 
 	cfg.Gemini.APIKey = v.GetString("GEMINI_API_KEY")
+	cfg.Gemini.Model = v.GetString("GEMINI_MODEL")
 
 	cfg.Resend.APIKey = v.GetString("RESEND_API_KEY")
 	cfg.Resend.FromEmail = v.GetString("RESEND_FROM_EMAIL")

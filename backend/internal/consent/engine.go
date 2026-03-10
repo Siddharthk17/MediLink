@@ -70,6 +70,7 @@ type ConsentEngine interface {
 	RecordBreakGlass(ctx context.Context, req BreakGlassRequest, physicianUserID string) (*Consent, error)
 	InvalidateCache(ctx context.Context, providerID, patientFHIRID string)
 	GetPatientFHIRID(ctx context.Context, userID string) (string, error)
+	GetConsentByID(ctx context.Context, consentID uuid.UUID) (*Consent, error)
 }
 
 type consentEngine struct {
@@ -452,4 +453,9 @@ func (e *consentEngine) GetPatientFHIRID(ctx context.Context, userID string) (st
 		return "", err
 	}
 	return e.repo.GetPatientFHIRID(ctx, uid)
+}
+
+// GetConsentByID retrieves a consent record by its UUID.
+func (e *consentEngine) GetConsentByID(ctx context.Context, consentID uuid.UUID) (*Consent, error) {
+	return e.repo.GetByID(ctx, consentID)
 }
