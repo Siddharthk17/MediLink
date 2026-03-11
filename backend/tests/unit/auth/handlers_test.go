@@ -145,6 +145,10 @@ func (m *mockRepo) CountRecentIPAttempts(ctx context.Context, ip string, since t
 	return 0, nil
 }
 func (m *mockRepo) ClearFailedAttempts(context.Context, string) error { return nil }
+func (m *mockRepo) StoreBackupCodes(context.Context, uuid.UUID, []string) error { return nil }
+func (m *mockRepo) GetBackupCodes(context.Context, uuid.UUID) ([]string, error) { return nil, nil }
+func (m *mockRepo) MarkBackupCodeUsed(context.Context, uuid.UUID, string) error { return nil }
+func (m *mockRepo) DeleteBackupCodes(context.Context, uuid.UUID) error { return nil }
 
 // Mock auth.JWTService
 

@@ -4,6 +4,7 @@ import { Calendar, Heart, Pill, Activity, FileText, Shield, Syringe } from 'luci
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { getCodeDisplay, formatRelative } from '@medilink/shared'
+import type { CodeableConcept } from '@medilink/shared'
 import { cn } from '@/lib/utils'
 import React from 'react'
 
@@ -36,12 +37,12 @@ function getEventDate(resource: Record<string, unknown>): string | undefined {
 function getEventTitle(resource: Record<string, unknown>): string {
   const type = resource.resourceType as string
   if (type === 'Encounter') return `${(resource.class as { display?: string })?.display || 'Visit'} encounter`
-  if (type === 'Condition') return getCodeDisplay(resource.code as any)
-  if (type === 'MedicationRequest') return getCodeDisplay(resource.medicationCodeableConcept as any)
-  if (type === 'Observation') return getCodeDisplay(resource.code as any)
-  if (type === 'DiagnosticReport') return getCodeDisplay(resource.code as any)
-  if (type === 'AllergyIntolerance') return getCodeDisplay(resource.code as any)
-  if (type === 'Immunization') return getCodeDisplay(resource.vaccineCode as any)
+  if (type === 'Condition') return getCodeDisplay(resource.code as CodeableConcept)
+  if (type === 'MedicationRequest') return getCodeDisplay(resource.medicationCodeableConcept as CodeableConcept)
+  if (type === 'Observation') return getCodeDisplay(resource.code as CodeableConcept)
+  if (type === 'DiagnosticReport') return getCodeDisplay(resource.code as CodeableConcept)
+  if (type === 'AllergyIntolerance') return getCodeDisplay(resource.code as CodeableConcept)
+  if (type === 'Immunization') return getCodeDisplay(resource.vaccineCode as CodeableConcept)
   return type
 }
 

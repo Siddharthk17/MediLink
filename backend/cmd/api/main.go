@@ -523,14 +523,20 @@ func main() {
 		authProtected.POST("/totp/verify-setup", auth.RequireRole("physician", "admin"), authHandler.VerifyTOTPSetup)
 	}
 
+	// Doctor directory — any authenticated user
+	router.GET("/doctors", auth.AuthMiddleware(jwtSvc), adminHandler.ListDoctors)
+
 	// Consent routes — authenticated
 	consentRoutes := router.Group("/consent")
 	consentRoutes.Use(auth.AuthMiddleware(jwtSvc))
 	{
 		consentRoutes.POST("/grant", auth.RequireRole("patient", "admin"), consentHandler.GrantConsent)
 		consentRoutes.DELETE("/:consentId/revoke", auth.RequireRole("patient", "physician", "admin"), consentHandler.RevokeConsent)
+		consentRoutes.PUT("/:consentId/accept", auth.RequireRole("physician", "admin"), consentHandler.AcceptConsent)
+		consentRoutes.PUT("/:consentId/decline", auth.RequireRole("physician", "admin"), consentHandler.DeclineConsent)
 		consentRoutes.GET("/my-grants", auth.RequireRole("patient", "admin"), consentHandler.GetMyGrants)
 		consentRoutes.GET("/my-patients", auth.RequireRole("physician", "admin"), consentHandler.GetMyPatients)
+		consentRoutes.GET("/pending-requests", auth.RequireRole("physician", "admin"), consentHandler.GetPendingRequests)
 		consentRoutes.GET("/:consentId", consentHandler.GetConsent)
 		consentRoutes.POST("/break-glass", auth.RequireRole("physician", "admin"), consentHandler.BreakGlass)
 		consentRoutes.GET("/access-log", auth.RequireRole("patient", "admin"), consentHandler.GetAccessLog)

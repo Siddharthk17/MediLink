@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Eye, EyeOff, Mail, Lock, Sun, Moon, Shield, Activity } from 'lucide-react'
@@ -41,15 +41,26 @@ export function LoginForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [totpError, setTotpError] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const { theme, toggleTheme } = useUIStore()
   const { setAuth, clearAuth } = useAuthStore()
   const router = useRouter()
+
+  useEffect(() => setMounted(true), [])
 
   const fetchAndSetUser = async (accessToken: string, refreshToken: string) => {
     document.cookie = `medilink_access_token=${accessToken}; path=/; samesite=strict`
     apiClient.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`
     const meRes = await authAPI.getMe()
     const profile = meRes.data
+
+    if (profile.role === 'patient') {
+      document.cookie = 'medilink_access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+      const patientUrl = process.env.NEXT_PUBLIC_PATIENT_PORTAL_URL || `${window.location.protocol}//${window.location.hostname}:3002`
+      window.location.href = `${patientUrl}/dashboard`
+      return
+    }
+
     setAuth(
       {
         id: profile.id,
@@ -261,6 +272,14 @@ export function LoginForm() {
               >
                 Register
               </Link>
+            </motion.p>
+            <motion.p variants={fadeUp} className="mt-3 text-center">
+              <a
+                href={mounted ? `${process.env.NEXT_PUBLIC_PATIENT_PORTAL_URL || `${window.location.protocol}//${window.location.hostname}:3002`}/login` : '/login'}
+                className="text-sm font-semibold text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
+              >
+                Patient Portal →
+              </a>
             </motion.p>
           </motion.div>
 

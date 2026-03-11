@@ -91,6 +91,30 @@ func (h *AdminHandler) decryptUserNames(users []UserSummary) {
 	}
 }
 
+// ListDoctors handles GET /doctors — public directory of active physicians.
+func (h *AdminHandler) ListDoctors(c *gin.Context) {
+	specialization := c.Query("specialization")
+
+	doctors, err := h.service.ListDoctors(c.Request.Context(), specialization)
+	if err != nil {
+		writeFHIRError(c, http.StatusInternalServerError, "processing", "failed to list doctors")
+		return
+	}
+
+	for i := range doctors {
+		if len(doctors[i].FullNameEnc) > 0 {
+			name, decErr := h.crypto.DecryptString(doctors[i].FullNameEnc)
+			if decErr != nil {
+				doctors[i].FullName = "[encrypted]"
+			} else {
+				doctors[i].FullName = name
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"doctors": doctors, "total": len(doctors)})
+}
+
 // ListUsers handles GET /admin/users
 func (h *AdminHandler) ListUsers(c *gin.Context) {
 	count, offset := parsePagination(c, 20, 100)

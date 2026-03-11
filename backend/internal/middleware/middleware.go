@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 // RequestIDKey is the context key for the request ID.
@@ -67,12 +68,14 @@ func RequestLoggingMiddleware(logger zerolog.Logger) gin.HandlerFunc {
 var allowedOrigins = map[string]bool{
 	"http://localhost:3000": true,
 	"http://localhost:3001": true,
+	"http://localhost:3002": true,
 }
 
 // InitCORSOrigins replaces the default origin allowlist.
 // Pass a comma-separated string of origins (e.g. "https://app.medilink.health,http://localhost:3000").
 func InitCORSOrigins(origins string) {
 	if origins == "" {
+		log.Warn().Msg("CORS_ALLOWED_ORIGINS not set — using localhost defaults (not suitable for production)")
 		return
 	}
 	m := make(map[string]bool)

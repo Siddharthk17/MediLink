@@ -1,460 +1,289 @@
-# 🔍 COMPREHENSIVE CROSS-REFERENCE AUDIT REPORT
-# Backend Routes vs Frontend API Calls - MediLink
+# MediLink — Comprehensive Codebase Audit Report
 
-**Audit Date**: 2024  
-**Status**: ⚠️ CRITICAL ISSUES FOUND  
-**Backend File**: `/backend/cmd/api/main.go` (967 lines)  
-**Frontend API Files**: 
-- ✅ `/frontend/shared/src/api/auth.ts`
-- ✅ `/frontend/shared/src/api/consent.ts`
-- ✅ `/frontend/shared/src/api/fhir.ts`
-- ✅ `/frontend/shared/src/api/clinical.ts`
-- ✅ `/frontend/shared/src/api/notifications.ts`
-- ✅ `/frontend/shared/src/api/search.ts`
-- ✅ `/frontend/shared/src/api/client.ts`
-- ❌ `/frontend/shared/src/api/admin.ts` (MISSING)
-- ❌ `/frontend/shared/src/api/documents.ts` (MISSING)
+**Audit Date:** January 2025  
+**Scope:** Full stack — Go backend, two Next.js frontends, shared package, infrastructure  
+**Mode:** READ ONLY — no code changes made
 
 ---
 
-## 🔴 CRITICAL ISSUES (BREAKING)
+## Executive Summary
 
-### 1. Drug Check API - Request Type Mismatch (CRITICAL)
+| Category | Critical | High | Medium | Low | Total |
+|----------|----------|------|--------|-----|-------|
+| Backend (Go) | 1 | 3 | 4 | 3 | 11 |
+| Physician Dashboard | 0 | 2 | 4 | 3 | 9 |
+| Patient Dashboard | 1 | 2 | 4 | 2 | 9 |
+| Shared Package | 0 | 2 | 3 | 2 | 7 |
+| Infrastructure | 2 | 3 | 4 | 3 | 12 |
+| **TOTAL** | **4** | **12** | **19** | **13** | **48** |
 
-**Location**: 
-- Backend: `internal/clinical/types.go` + `internal/clinical/handlers.go`
-- Frontend: `frontend/shared/src/api/clinical.ts`
-
-**Issue**: Frontend sends wrong patient ID format
-
-```
-Backend expects:  patientId: "abc123" (plain FHIR ID)
-Frontend sends:   patientId: "Patient/abc123" (full reference)
-Result: Handler tries to create "Patient/Patient/abc123" - BROKEN
-```
-
-**Fix Required**:
-```typescript
-// BEFORE (WRONG):
-checkDrugInteractions: (patientId: string, rxnormCode: string) =>
-  apiClient.post<DrugCheckResult>('/clinical/drug-check', {
-    patientId: `Patient/${patientId}`,  // ❌ WRONG
-    newMedication: { rxnormCode },
-  }),
-
-// AFTER (CORRECT):
-checkDrugInteractions: (patientId: string, rxnormCode: string) =>
-  apiClient.post<DrugCheckResult>('/clinical/drug-check', {
-    patientId: patientId,  // ✅ Just the ID
-    newMedication: { rxnormCode },
-  }),
-```
+### Build and Test Status
+| Check | Result |
+|-------|--------|
+| go build ./... | Clean |
+| go vet ./... | 4 test compilation errors |
+| go test ./... | 6 failures (4 build, 2 assertion) |
+| Physician tsc --noEmit | Clean |
+| Physician next build | 18 routes, all compile |
+| Physician next lint | 1 warning (missing useCallback dep) |
+| Physician vitest | 412 tests passed (43 files) |
+| Patient tsc --noEmit | Clean |
+| Patient next build | 18 routes, all compile |
+| Patient next lint | 0 warnings |
+| Patient vitest | No test files exist |
 
 ---
 
-### 2. Drug Check API - Response Type Mismatch (CRITICAL)
+## CRITICAL ISSUES (4)
 
-**Backend sends**:
-```go
-{
-  "newMedication": { "rxnormCode": "...", "name": "..." },
-  "interactions": [
-    {
-      "drugA": { "rxnormCode": "...", "name": "..." },
-      "drugB": { "rxnormCode": "...", "name": "..." },  // ← Existing med
-      "severity": "major",
-      "description": "...",
-      "mechanism": "...",
-      "clinicalEffect": "...",
-      "management": "...",
-      "source": "openfda",
-      "cached": false
-    }
-  ],
-  "allergyConflicts": [
-    {
-      "allergen": { "rxnormCode": "...", "name": "..." },
-      "newMedication": { "rxnormCode": "...", "name": "..." },
-      "severity": "major",
-      "mechanism": "...",
-      "drugClass": "...",
-      "reaction": "..."
-    }
-  ],
-  "highestSeverity": "major",
-  "hasContraindication": false,
-  "checkComplete": true
-}
-```
-
-**Frontend expects**:
-```typescript
-{
-  "newMedication": { "rxnormCode": "...", "name": "..." },
-  "interactions": [
-    {
-      "existingMedication": { "rxnormCode": "...", "name": "..." },  // ❌ Field name wrong
-      "severity": "major",
-      "description": "...",
-      "mechanism": "...",
-      "clinicalEffect": "...",
-      "management": "..."
-      // ❌ Missing: drugA, source, cached
-    }
-  ],
-  "allergyConflicts": [
-    {
-      "allergyCode": "...",  // ❌ Wrong: should be allergen.rxnormCode
-      "allergyDisplay": "...",  // ❌ Wrong: should be allergen.name
-      "severity": "major",
-      "crossReactive": false  // ❌ Wrong: backend has mechanism, not this
-      // ❌ Missing: allergen, newMedication, drugClass, reaction
-    }
-  ],
-  "overallSeverity": "major",  // ❌ Wrong field name: backend is "highestSeverity"
-  "checkComplete": true
-  // ❌ Missing: hasContraindication, checkError
-}
-```
-
-**Mismatches**:
-| Backend Field | Frontend Field | Status |
-|---|---|---|
-| `interactions[].drugA` | ❌ Missing | WRONG |
-| `interactions[].drugB` | `existingMedication` | NAME MISMATCH |
-| `interactions[].source` | ❌ Missing | WRONG |
-| `interactions[].cached` | ❌ Missing | WRONG |
-| `allergyConflicts[].allergen` | `allergyCode` + `allergyDisplay` | STRUCTURE MISMATCH |
-| `allergyConflicts[].newMedication` | ❌ Missing | WRONG |
-| `allergyConflicts[].drugClass` | ❌ Missing | WRONG |
-| `allergyConflicts[].reaction` | ❌ Missing | WRONG |
-| `allergyConflicts[].mechanism` | `crossReactive` | NAME MISMATCH |
-| `highestSeverity` | `overallSeverity` | NAME MISMATCH |
-| `hasContraindication` | ❌ Missing | WRONG |
-| `checkError` | ❌ Missing | WRONG |
-
-**Fix Required**: Update TypeScript types in `frontend/shared/src/types/fhir.ts`:
-```typescript
-export interface DrugCheckResult {
-  newMedication: { rxnormCode: string; name: string }
-  interactions: Array<{
-    drugA: { rxnormCode: string; name: string }  // ✅ ADD
-    drugB: { rxnormCode: string; name: string }  // ✅ Changed from existingMedication
-    severity: InteractionSeverity
-    description: string
-    mechanism?: string
-    clinicalEffect?: string
-    management?: string
-    source: string  // ✅ ADD
-    cached: boolean  // ✅ ADD
-  }>
-  allergyConflicts: Array<{
-    allergen: { rxnormCode: string; name: string }  // ✅ CHANGE from allergyCode/allergyDisplay
-    newMedication: { rxnormCode: string; name: string }  // ✅ ADD
-    severity: InteractionSeverity
-    mechanism: string  // ✅ CHANGE from crossReactive
-    drugClass?: string  // ✅ ADD
-    reaction?: string  // ✅ ADD
-  }>
-  highestSeverity: InteractionSeverity  // ✅ CHANGE from overallSeverity
-  hasContraindication: boolean  // ✅ ADD
-  checkComplete: boolean
-  checkError?: string  // ✅ ADD
-}
-```
+### C-1. React Hooks Violation — Patient Health Page
+**File:** frontend/patient-dashboard/src/app/(dashboard)/health/page.tsx:32-39  
+**Category:** Bug  
+**Description:** useQuery is called inside .map(), which violates the React Rules of Hooks. The code suppresses the ESLint warning with eslint-disable-next-line react-hooks/rules-of-hooks. This will cause unpredictable behavior if the array length changes between renders — state corruption, crashes, or stale data.  
+**Impact:** Runtime crashes or state corruption when sections array changes.  
+**Fix:** Extract each query into its own named hook call, or use a single query that fetches all resource types.
 
 ---
 
-### 3. Drug Check Acknowledge - Request Type Mismatch (CRITICAL)
-
-**Location**: `frontend/shared/src/api/clinical.ts` line 11-16
-
-**Issue**: Multiple field mismatches
-
-```typescript
-// CURRENT (WRONG):
-acknowledgeDrugInteraction: (patientId: string, rxnormCode: string, reason: string) =>
-  apiClient.post('/clinical/drug-check/acknowledge', {
-    patientId: `Patient/${patientId}`,  // ❌ Should be just ID, not "Patient/{id}"
-    rxnormCode,  // ❌ Backend expects: newMedication
-    reason,  // ❌ Backend expects: reason (OK), but...
-    // ❌ Missing: conflictingMedications array
-  }),
-
-// Backend expects:
-{
-  "patientId": "abc123",  // Just FHIR ID
-  "newMedication": "rxnorm123",  // ← Wrong field name in frontend
-  "conflictingMedications": ["rxnorm456", "rxnorm789"],  // ← MISSING
-  "reason": "Lorem ipsum dolor sit amet consectetur..."  // Min 20 chars
-}
-```
-
-**Fix Required**:
-```typescript
-acknowledgeDrugInteraction: (patientId: string, rxnormCode: string, conflictingCodes: string[], reason: string) =>
-  apiClient.post('/clinical/drug-check/acknowledge', {
-    patientId,  // ✅ Just the ID
-    newMedication: rxnormCode,  // ✅ Renamed
-    conflictingMedications: conflictingCodes,  // ✅ Added
-    reason,  // ✅ Keep (validate min 20 chars on frontend)
-  }),
-```
+### C-2. Default Encryption Key is All Zeros
+**File:** docker-compose.yml:13, .env:22  
+**Category:** Security  
+**Description:** The AES-256-GCM encryption key used for PII (patient names, phone numbers) is set to 64 hex zeros. This provides zero encryption — any attacker with DB access can decrypt all patient data trivially.  
+**Impact:** Complete PII exposure if database is compromised.  
+**Fix:** Generate a random 32-byte key: openssl rand -hex 32. Store in secure secret manager, never in version control.
 
 ---
 
-### 4. Missing Frontend API Modules (CRITICAL)
-
-**Not Found**:
-- ❌ `frontend/shared/src/api/admin.ts` (16 backend routes not accessible)
-- ❌ `frontend/shared/src/api/documents.ts` (4 backend routes not accessible)
-- ❌ `frontend/shared/src/api/research.ts` (4 backend routes not accessible)
-
-**Impact**:
-- No admin panel functionality
-- No document upload/processing
-- No research export capability
-
-**Required Files**:
-
-`frontend/shared/src/api/admin.ts`:
-```typescript
-import { apiClient } from './client'
-
-export const adminAPI = {
-  listUsers: () => apiClient.get('/admin/users'),
-  getUser: (userId: string) => apiClient.get(`/admin/users/${userId}`),
-  updateUserRole: (userId: string, role: string) => apiClient.put(`/admin/users/${userId}/role`, { role }),
-  approvePhysician: (userId: string) => apiClient.post(`/admin/physicians/${userId}/approve`),
-  suspendPhysician: (userId: string, reason: string) => apiClient.post(`/admin/physicians/${userId}/suspend`, { reason }),
-  reinstatePhysician: (userId: string) => apiClient.post(`/admin/physicians/${userId}/reinstate`),
-  inviteResearcher: (email: string) => apiClient.post('/admin/researchers/invite', { email }),
-  getAuditLogs: (params?: any) => apiClient.get('/admin/audit-logs', { params }),
-  getPatientAuditLog: (patientId: string) => apiClient.get(`/admin/audit-logs/patient/${patientId}`),
-  getActorAuditLog: (actorId: string) => apiClient.get(`/admin/audit-logs/actor/${actorId}`),
-  getBreakGlassEvents: () => apiClient.get('/admin/audit-logs/break-glass'),
-  getStats: () => apiClient.get('/admin/stats'),
-  getSystemHealth: () => apiClient.get('/admin/system/health'),
-  triggerReindex: () => apiClient.post('/admin/search/reindex'),
-  triggerTokenCleanup: () => apiClient.post('/admin/tasks/cleanup-tokens'),
-}
-```
-
-`frontend/shared/src/api/documents.ts`:
-```typescript
-import { apiClient } from './client'
-import type { DocumentJob } from '../types/api'
-
-export const documentsAPI = {
-  uploadDocument: (file: File, patientFhirId: string) => {
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('patientFhirId', patientFhirId)
-    return apiClient.post<DocumentJob>('/documents/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-  },
-  getJobStatus: (jobId: string) => apiClient.get<DocumentJob>(`/documents/jobs/${jobId}`),
-  listJobs: () => apiClient.get<{ jobs: DocumentJob[] }>('/documents/jobs'),
-  deleteJob: (jobId: string) => apiClient.delete(`/documents/jobs/${jobId}`),
-}
-```
+### C-3. Hardcoded JWT Secret in Version Control
+**File:** docker-compose.yml:12, .env:17  
+**Category:** Security  
+**Description:** JWT signing secret is a plaintext string committed to the repository: dev-secret-change-in-production-minimum-32-chars. Anyone with repo access can forge JWT tokens and impersonate any user.  
+**Impact:** Complete authentication bypass.  
+**Fix:** Use environment variable injection at deploy time. Remove from docker-compose.yml.
 
 ---
 
-### 5. Auth Endpoints Not Called by Frontend (HIGH)
-
-**Backend Routes** → **Frontend Status**:
-- `POST /auth/register/patient` → ❌ NOT CALLED
-- `POST /auth/password/change` → ❌ NOT CALLED
-
-**Impact**: Patient registration flow not exposed to frontend; password change not available
-
----
-
-## ⚠️ HIGH PRIORITY ISSUES
-
-### 6. Consent Routes Not Called
-
-**Backend Routes** → **Frontend Status**:
-- `GET /consent/my-grants` → ❌ NOT CALLED
-- `GET /consent/:consentId` → ❌ NOT CALLED
-- `GET /consent/access-log` → ❌ NOT CALLED
-
-**File**: `frontend/shared/src/api/consent.ts`
-
-**Fix**:
-```typescript
-export const consentAPI = {
-  // ... existing ...
-  getMyGrants: () =>
-    apiClient.get<{ consents: any[] }>('/consent/my-grants'),
-
-  getConsent: (consentId: string) =>
-    apiClient.get(`/consent/${consentId}`),
-
-  getAccessLog: () =>
-    apiClient.get('/consent/access-log'),
-}
-```
+### C-4. CORS Test Expectation Mismatch
+**File:** tests/unit/middleware/middleware_test.go:60  
+**Category:** Test / Security  
+**Description:** The CORS middleware was upgraded from wildcard * to origin-based allowlisting (only localhost:3000 and localhost:3001), which is the secure approach. However, the test still expects Access-Control-Allow-Origin: *. The test sends no Origin header, so the middleware correctly returns no ACAO header, but the test asserts *.  
+**Impact:** Test failure masks the fact that CORS implementation is actually correct and secure.  
+**Fix:** Update test to send Origin: http://localhost:3000 and assert the echoed origin, not *.
 
 ---
 
-### 7. Clinical Routes Not Called
+## HIGH ISSUES (12)
 
-**Backend Route** → **Frontend Status**:
-- `GET /clinical/drug-check/history/:patientId` → ❌ NOT CALLED
+### H-1. Four Go Test Files Won't Compile — Stale Mock Interfaces
+**Files:**
+- tests/unit/admin/admin_test.go:231 — mockService missing ListDoctors method
+- tests/unit/consent/consent_test.go:237 — mockConsentRepo missing GetPendingRequests method
+- tests/unit/documents/document_test.go:40 — mockJobRepo missing ListByUploader method
+- tests/unit/notifications/preferences_test.go:123 — FCMToken should be *string not string
 
-**File**: `frontend/shared/src/api/clinical.ts`
-
-**Fix**:
-```typescript
-export const clinicalAPI = {
-  // ... existing ...
-  getDrugCheckHistory: (patientId: string) =>
-    apiClient.get(`/clinical/drug-check/history/${patientId}`),
-}
-```
+**Category:** Test  
+**Description:** When new interface methods were added to production code, mock structs in tests were not updated. These tests cannot compile, meaning their coverage is zero.  
+**Fix:** Add missing methods to each mock struct.
 
 ---
 
-### 8. Notifications Routes Not Called
-
-**Backend Routes** → **Frontend Status**:
-- `POST /notifications/fcm-token` → ❌ NOT CALLED
-- `DELETE /notifications/fcm-token` → ❌ NOT CALLED
-
-**File**: `frontend/shared/src/api/notifications.ts`
-
-**Fix**:
-```typescript
-export const notificationsAPI = {
-  // ... existing ...
-  registerFCMToken: (token: string) =>
-    apiClient.post('/notifications/fcm-token', { token }),
-
-  revokeFCMToken: () =>
-    apiClient.delete('/notifications/fcm-token'),
-}
-```
+### H-2. Search Test Expects 400 But Code Returns 500
+**File:** tests/unit/search/search_test.go:211  
+**Category:** Bug / Test  
+**Description:** TestUnifiedSearch_PhysicianRequiresPatient expects 400 with "patient parameter required" when physician searches without patient param. But the search handler was refactored to auto-scope to all consented patients (DB query). Test sqlmock has no expectations → DB call fails → 500 "search failed".  
+**Fix:** Update test to set DB expectations, OR add graceful fallback in SearchService.
 
 ---
 
-## ✅ CORRECT IMPLEMENTATIONS
-
-### Auth Routes (8/10)
-- ✅ POST /auth/register/physician
-- ✅ POST /auth/login
-- ✅ POST /auth/login/verify-totp
-- ✅ POST /auth/logout
-- ✅ POST /auth/refresh
-- ✅ POST /auth/totp/setup
-- ✅ POST /auth/totp/verify-setup
-- ✅ GET /auth/me
-
-### Consent Routes (3/7)
-- ✅ POST /consent/grant
-- ✅ DELETE /consent/:consentId/revoke
-- ✅ GET /consent/my-patients
-- ✅ POST /consent/break-glass
-
-### FHIR Routes (8/50+)
-- ✅ GET /fhir/R4/Patient
-- ✅ GET /fhir/R4/Patient/:id
-- ✅ GET /fhir/R4/Patient/:id/$timeline
-- ✅ GET /fhir/R4/Observation/$lab-trends
-- ✅ POST /fhir/R4/:resourceType (generic)
-- ✅ GET /fhir/R4/:resourceType (search)
-- ✅ GET /fhir/R4/:resourceType/:id
-
-### Notifications Routes (2/4)
-- ✅ GET /notifications/preferences
-- ✅ PUT /notifications/preferences
-
-### Other Routes (2/2)
-- ✅ GET /search (unified search)
+### H-3. Error Status Codes Determined By String Matching
+**File:** internal/consent/handlers.go:48-53  
+**Category:** Bug  
+**Description:** HTTP status codes determined by strings.Contains(err.Error(), "cannot grant"). Brittle — if error message changes, wrong status code returned.  
+**Fix:** Use sentinel errors and errors.Is().
 
 ---
 
-## 📊 AUDIT STATISTICS
-
-| Category | Total Backend Routes | Frontend Calls | Match % |
-|---|---|---|---|
-| Auth | 10 | 8 | 80% |
-| Consent | 7 | 4 | 57% |
-| Clinical | 3 | 2 | 67% |
-| FHIR | 50+ | 7 | 14% |
-| Documents | 4 | 0 | 0% ❌ |
-| Admin | 16 | 0 | 0% ❌ |
-| Notifications | 4 | 2 | 50% |
-| Research | 4 | 0 | 0% ❌ |
-| Search | 1 | 1 | 100% |
-| **TOTAL** | **~99** | **~24** | **~24%** ⚠️ |
+### H-4. Empty catch {} Blocks Swallow Errors Silently
+**Files:** physician-dashboard LoginForm.tsx:113, DrugCheckPanel.tsx:108, DocumentUpload.tsx:65, useDocumentJobs.ts:26  
+**Category:** Error Handling  
+**Description:** Four catch blocks catch errors without logging or handling them. User sees no feedback on failure.  
+**Fix:** Add toast.error() or console.error() in each catch block.
 
 ---
 
-## 🔧 RECOMMENDED FIXES (Priority Order)
-
-### Priority 1: CRITICAL (Fix Now)
-1. ✅ Fix drug check request: Send plain ID, not "Patient/{id}"
-2. ✅ Fix drug check response: Align all field names with backend
-3. ✅ Fix acknowledge request: Add conflictingMedications array
-4. ✅ Create admin.ts module
-5. ✅ Create documents.ts module
-
-### Priority 2: HIGH (Fix This Sprint)
-6. ✅ Add `/auth/register/patient` call to frontend
-7. ✅ Add `/auth/password/change` call to frontend
-8. ✅ Add missing consent routes (my-grants, get, access-log)
-9. ✅ Add `/clinical/drug-check/history` call
-10. ✅ Add FCM token routes
-
-### Priority 3: MEDIUM (Fix Next Sprint)
-11. ✅ Add FHIR history/versioning routes
-12. ✅ Add research export routes
-13. ✅ Implement direct Patient CRUD (currently uses generic)
+### H-5. as any Type Casts Undermine Type Safety (14 total)
+**Files:** TimelineEvent.tsx (6), PatientTimeline.tsx (2), AllergyList.tsx (2), labs/page.tsx (1), search/page.tsx (2), profile/page.tsx (1)  
+**Category:** Type Safety  
+**Description:** 14 as any casts across both dashboards, mostly on FHIR resource properties.  
+**Fix:** Properly type FHIR resources in shared package or use type guards.
 
 ---
 
-## FILES AFFECTED
-
-### Backend (Read-Only)
-- `backend/cmd/api/main.go` - Routes defined (967 lines)
-- `backend/internal/clinical/types.go` - Drug check types
-- `backend/internal/clinical/handlers.go` - Drug check handlers
-- `backend/internal/consent/engine.go` - Consent types
-- `backend/internal/auth/handlers.go` - Auth types
-
-### Frontend (Needs Changes)
-- `frontend/shared/src/api/clinical.ts` - 🔴 CRITICAL FIXES NEEDED
-- `frontend/shared/src/api/consent.ts` - ⚠️ Add missing routes
-- `frontend/shared/src/api/auth.ts` - ⚠️ Add missing routes
-- `frontend/shared/src/api/notifications.ts` - ⚠️ Add missing routes
-- `frontend/shared/src/types/fhir.ts` - 🔴 CRITICAL TYPE FIXES NEEDED
-- `frontend/shared/src/types/api.ts` - ✅ Generally OK
-- `frontend/shared/src/api/admin.ts` - ❌ NEEDS CREATION
-- `frontend/shared/src/api/documents.ts` - ❌ NEEDS CREATION
-- `frontend/physician-dashboard/next.config.ts` - ✅ CORRECT
+### H-6. SELECT * Used in 11 Repository Queries
+**Files:** auth/repository.go, notifications/preferences_repo.go, consent/repository.go, documents/repository.go  
+**Category:** Performance / Maintainability  
+**Description:** SELECT * returns all columns. Schema changes could cause scan errors or fetch unnecessary data.  
+**Fix:** Explicitly list columns in SELECT statements.
 
 ---
 
-## VERIFICATION CHECKLIST
-
-- [ ] Drug check request/response types fixed
-- [ ] admin.ts created with 16 endpoints
-- [ ] documents.ts created with 4 endpoints
-- [ ] research.ts created (if needed) with 4 endpoints
-- [ ] All missing routes added to respective modules
-- [ ] TypeScript types aligned with backend Go structs
-- [ ] Request/response validation updated
-- [ ] Frontend tests updated
-- [ ] Backend tests updated
-- [ ] API documentation updated
+### H-7. Patient Dashboard Has Zero Tests
+**File:** frontend/patient-dashboard/  
+**Category:** Test  
+**Description:** 14 pages, 10 components, 2 stores, 5 lib files — all untested.  
+**Fix:** Add tests for auth store, middleware, queryClient, and critical UI components.
 
 ---
 
-**Audit Completed**: Cross-reference verification of 99+ backend routes against frontend API calls  
-**Critical Issues Found**: 5  
-**High Priority Issues**: 8  
-**Missing Modules**: 3  
-**Recommendation**: Address Priority 1 issues immediately before deployment
+### H-8. Documentation Stubs — Critical Docs Are Empty
+**Files:** docs/API.md, docs/SECURITY.md, docs/ARCHITECTURE.md, docs/FHIR_COMPLIANCE.md  
+**Category:** Documentation  
+**Description:** All four files contain only "Coming in Week 8" placeholder text.  
+**Fix:** Complete before production deployment.
+
+---
+
+### H-9. Elasticsearch Accessible Without Authentication
+**File:** docker-compose.yml:106-120  
+**Category:** Security  
+**Description:** Elasticsearch runs with xpack.security.enabled=false. Contains indexed FHIR patient data.  
+**Fix:** Enable xpack security or network-isolate.
+
+---
+
+### H-10. MinIO Console Exposed on Port 9051
+**File:** docker-compose.yml:129-131  
+**Category:** Security  
+**Description:** MinIO web console exposed with default dev credentials. Contains uploaded medical documents.  
+**Fix:** Restrict to 127.0.0.1:9051:9051 or remove port exposure.
+
+---
+
+### H-11. Missing Response Type Annotations on Shared API Methods
+**File:** frontend/shared/src/api/consent.ts  
+**Category:** Type Safety  
+**Description:** Mutation methods (grantConsent, revokeConsent, acceptConsent, declineConsent, breakGlass) lack TypeScript response type annotations.  
+**Fix:** Add generic type params.
+
+---
+
+### H-12. Documents API Missing from Shared Package
+**File:** frontend/shared/src/index.ts  
+**Category:** Missing API  
+**Description:** Backend exposes /documents/* endpoints but shared package has no documentsAPI export.  
+**Fix:** Create shared/src/api/documents.ts.
+
+---
+
+## MEDIUM ISSUES (19)
+
+| ID | File | Category | Description |
+|----|------|----------|-------------|
+| M-1 | middleware.go:67-70 | Config | CORS default origins missing port 3002 (patient dashboard) |
+| M-2 | DocumentUpload.tsx:70 | Bug | useCallback missing queryClient dependency |
+| M-3 | ratelimit.go:133-134 | Security | Rate limiter fails open when Redis is unavailable |
+| M-4 | consent/middleware.go:17-20 | Security | Consent middleware only checks GET; POST/PUT bypass consent |
+| M-5 | Both next.config.ts | Config | API proxy defaults to localhost — breaks in production |
+| M-6 | shared/api/client.ts:61 | Bug | Token refresh URL construction fragile with trailing slashes |
+| M-7 | shared/api/fhir.ts:19,22,25 | Type Safety | No validation for dynamic FHIR resource type strings |
+| M-8 | shared/api/doctors.ts:3-8 | Code Org | DoctorSummary type defined in API file instead of types file |
+| M-9 | docker-compose.yml:76-90 | Config | No DB backup/restore strategy documented |
+| M-10 | docker-compose.yml | Config | No resource limits on Docker containers |
+| M-11 | docker-compose.yml | Config | No Docker log driver configuration |
+| M-12 | Both TopBar components | Accessibility | Missing aria-current="page" on active nav links |
+| M-13 | Both queryClient.ts | Error Handling | Global mutation error handler only does console.error() |
+| M-14 | docker-compose.yml:110 | Config | Elasticsearch heap 512MB — too small for production |
+| M-15 | Multiple pages | React | Array index used as React key on skeleton loaders |
+| M-16 | docker-compose.yml:164-171 | Security | Asynqmon UI exposed on port 8581 without authentication |
+| M-17 | docker-compose.yml | Config | No version pinning for minio, grafana, prometheus images |
+| M-18 | Patient login/register | Type Safety | Manual type assertions instead of shared parseAPIError() |
+| M-19 | integration/setup_test.go:21 | Test | TODO: integration tests don't manage DB schema lifecycle |
+
+---
+
+## LOW ISSUES (13)
+
+| ID | File | Description |
+|----|------|-------------|
+| L-1 | middleware.go:139 | GetRequestID type assertion without ok-check |
+| L-2 | admin/repository.go:212 | fmt.Sprintf for column list — safe but unusual |
+| L-3 | Physician TOTPInput.tsx | key={i} for fixed-length OTP inputs — acceptable |
+| L-4 | Patient uiStore.ts | Command palette toggle exists but no component |
+| L-5 | Patient Interactions.tsx | Hardcoded colors instead of CSS variables |
+| L-6 | Shared fhir.ts | FHIRBundle entry type is loose union |
+| L-7 | Shared severity.ts | Severity ordering uses array position |
+| L-8 | Both dashboards | localStorage for theme storage — non-sensitive |
+| L-9 | Physician tests | innerHTML in test files only — no production XSS risk |
+| L-10 | Shared api.ts | parseAPIError uses loose typing |
+| L-11 | Shared types | No pagination wrapper type |
+| L-12 | Both dashboards | Only 11 aria-* attributes total — minimal accessibility |
+| L-13 | Backend | Only 1 TODO in entire codebase — clean |
+
+---
+
+## Strengths and Good Patterns
+
+### Security (Well Done)
+- Password hashing: bcrypt cost factor 12
+- Password validation: 8+ chars, upper/lower/digit/special, common password blocklist
+- Email encryption: AES-256-GCM for PII at rest
+- CORS: Origin-based allowlisting, not wildcard
+- Security headers: X-Frame-Options, CSP, HSTS, X-Content-Type-Options
+- Rate limiting: Per-role with Redis sorted sets (patient 100/min, auth 5/min, TOTP 5/10min, break-glass 3/24h)
+- No SQL injection: All queries use parameterized placeholders
+- No XSS: Zero dangerouslySetInnerHTML in production code
+- JWT in httpOnly cookies
+- TOTP/MFA for physicians with backup codes
+- Audit logging on all data access
+- Token blacklisting on logout and password change
+- .env not in git
+
+### Architecture (Well Done)
+- Consent middleware on every FHIR read
+- Redis-backed consent cache with proper invalidation
+- Break-glass emergency access with mandatory audit
+- FHIR R4: 8 resource types with validation hooks
+- Drug interaction pre-create hook blocks contraindicated prescriptions
+- Reference validation on all FHIR create/update
+- Graceful degradation: Noop clients for missing services
+- Graceful shutdown with signal handling
+- Health/readiness endpoints
+
+### Frontend (Well Done)
+- 412 physician tests passing (43 files)
+- Both dashboards: TypeScript strict, zero type errors
+- Both dashboards: production build clean
+- Auto-refresh polling on all queries
+- Error boundaries in both dashboards
+- Loading/error/empty states on all data pages
+- Hydration safety with mounted state pattern
+- Event listener cleanup in all useEffects
+
+---
+
+## Recommended Fix Priority
+
+### Immediate (Before Any Deployment)
+1. C-2 — Replace all-zeros encryption key
+2. C-3 — Move JWT secret out of version control
+3. C-1 — Fix React hooks violation in patient health page
+4. H-9 — Enable Elasticsearch authentication
+5. H-10 — Restrict MinIO console port
+
+### This Sprint
+6. C-4, H-1, H-2 — Fix all 7 broken/failing tests
+7. H-3 — Replace string-matching error handling with sentinel errors
+8. H-4 — Add error handling to empty catch blocks
+9. M-1 — Add port 3002 to CORS allowed origins
+10. M-4 — Extend consent middleware to POST/PUT operations
+
+### Next Sprint
+11. H-5 — Eliminate as any casts with proper FHIR types
+12. H-7 — Write patient dashboard tests
+13. H-6 — Replace SELECT * with explicit column lists
+14. H-8 — Complete documentation stubs
+15. H-11, H-12 — Type shared API methods, add documents API
+
+---
+
+*End of Audit Report. No code was modified during this audit.*

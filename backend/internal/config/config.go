@@ -203,5 +203,8 @@ func validate(cfg *Config) error {
 	if cfg.JWT.Secret == "" {
 		return fmt.Errorf("config: JWT_SECRET is required")
 	}
+	if len(cfg.JWT.Secret) < 32 {
+		return fmt.Errorf("config: JWT_SECRET must be at least 32 characters for HMAC-SHA256 security, got %d", len(cfg.JWT.Secret))
+	}
 	return nil
 }

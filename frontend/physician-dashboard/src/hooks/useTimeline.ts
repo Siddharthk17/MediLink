@@ -13,5 +13,6 @@ export function useTimeline(patientId: string, resourceType?: string) {
       const res = await fhirAPI.getTimeline(patientId, params)
       return res.data
     },
+    refetchInterval: 120_000,
   })
 }

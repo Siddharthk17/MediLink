@@ -2,8 +2,8 @@ package consent
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -45,10 +45,10 @@ func (h *ConsentHandler) GrantConsent(c *gin.Context) {
 	consent, err := h.engine.GrantConsent(c.Request.Context(), req, actorID)
 	if err != nil {
 		status := http.StatusInternalServerError
-		if strings.Contains(err.Error(), "cannot grant") || strings.Contains(err.Error(), "invalid scope") {
+		if errors.Is(err, ErrSelfConsent) || errors.Is(err, ErrInvalidScope) || errors.Is(err, ErrExpiredDate) || errors.Is(err, ErrProviderNotPhysician) {
 			status = http.StatusBadRequest
 		}
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, ErrProviderNotFound) || errors.Is(err, ErrPatientNotFound) {
 			status = http.StatusNotFound
 		}
 		c.JSON(status, gin.H{
@@ -70,10 +70,10 @@ func (h *ConsentHandler) RevokeConsent(c *gin.Context) {
 	err := h.engine.RevokeConsent(c.Request.Context(), consentID, actorID, actorRole)
 	if err != nil {
 		status := http.StatusInternalServerError
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, ErrConsentNotFound) {
 			status = http.StatusNotFound
 		}
-		if strings.Contains(err.Error(), "only the patient") {
+		if errors.Is(err, ErrUnauthorizedAction) {
 			status = http.StatusForbidden
 		}
 		c.JSON(status, gin.H{
@@ -99,7 +99,17 @@ func (h *ConsentHandler) GetMyGrants(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"consents": consents, "total": len(consents)})
+	type enrichedConsent struct {
+		*Consent
+		ProviderName string `json:"providerName,omitempty"`
+	}
+	enriched := make([]enrichedConsent, 0, len(consents))
+	for _, consent := range consents {
+		name := h.engine.GetUserDisplayName(c.Request.Context(), consent.ProviderID)
+		enriched = append(enriched, enrichedConsent{Consent: consent, ProviderName: name})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"consents": enriched, "total": len(enriched)})
 }
 
 // GetMyPatients handles GET /consent/my-patients
@@ -228,6 +238,140 @@ func (h *ConsentHandler) GetConsent(c *gin.Context) {
 	c.JSON(http.StatusOK, consent)
 }
 
+// AcceptConsent handles PUT /consent/:consentId/accept
+func (h *ConsentHandler) AcceptConsent(c *gin.Context) {
+	consentID := c.Param("consentId")
+	actorID := auth.GetActorID(c).String()
+	actorRole := auth.GetActorRole(c)
+
+	if actorRole != "physician" && actorRole != "admin" {
+		c.JSON(http.StatusForbidden, gin.H{
+			"resourceType": "OperationOutcome",
+			"issue": []gin.H{{"severity": "error", "code": "forbidden", "diagnostics": "Only physicians can accept consent requests"}},
+		})
+		return
+	}
+
+	if err := h.engine.AcceptConsent(c.Request.Context(), consentID, actorID); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, ErrConsentNotFound) {
+			status = http.StatusNotFound
+		}
+		if errors.Is(err, ErrNotPending) || errors.Is(err, ErrUnauthorizedAction) {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{
+			"resourceType": "OperationOutcome",
+			"issue": []gin.H{{"severity": "error", "code": "exception", "diagnostics": err.Error()}},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Consent request accepted"})
+}
+
+// DeclineConsent handles PUT /consent/:consentId/decline
+func (h *ConsentHandler) DeclineConsent(c *gin.Context) {
+	consentID := c.Param("consentId")
+	actorID := auth.GetActorID(c).String()
+	actorRole := auth.GetActorRole(c)
+
+	if actorRole != "physician" && actorRole != "admin" {
+		c.JSON(http.StatusForbidden, gin.H{
+			"resourceType": "OperationOutcome",
+			"issue": []gin.H{{"severity": "error", "code": "forbidden", "diagnostics": "Only physicians can decline consent requests"}},
+		})
+		return
+	}
+
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	c.ShouldBindJSON(&body)
+
+	if err := h.engine.DeclineConsent(c.Request.Context(), consentID, actorID, body.Reason); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, ErrConsentNotFound) {
+			status = http.StatusNotFound
+		}
+		if errors.Is(err, ErrNotPending) || errors.Is(err, ErrUnauthorizedAction) {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{
+			"resourceType": "OperationOutcome",
+			"issue": []gin.H{{"severity": "error", "code": "exception", "diagnostics": err.Error()}},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Consent request declined"})
+}
+
+// GetPendingRequests handles GET /consent/pending-requests
+func (h *ConsentHandler) GetPendingRequests(c *gin.Context) {
+	actorID := auth.GetActorID(c).String()
+
+	patients, err := h.engine.GetPendingRequests(c.Request.Context(), actorID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"resourceType": "OperationOutcome",
+			"issue": []gin.H{{"severity": "error", "code": "exception", "diagnostics": err.Error()}},
+		})
+		return
+	}
+
+	type patientInfo struct {
+		ID        string `json:"id"`
+		FhirID    string `json:"fhirId"`
+		FullName  string `json:"fullName"`
+		Gender    string `json:"gender,omitempty"`
+		BirthDate string `json:"birthDate,omitempty"`
+	}
+	type consentInfo struct {
+		ID        string   `json:"id"`
+		Status    string   `json:"status"`
+		Scope     []string `json:"scope"`
+		GrantedAt string   `json:"grantedAt"`
+	}
+	type enrichedEntry struct {
+		Patient patientInfo `json:"patient"`
+		Consent consentInfo `json:"consent"`
+	}
+
+	entries := make([]enrichedEntry, 0, len(patients))
+	for _, p := range patients {
+		var fhirData struct {
+			Name      []struct{ Text string `json:"text"` } `json:"name"`
+			Gender    string                                 `json:"gender"`
+			BirthDate string                                 `json:"birthDate"`
+		}
+		if len(p.PatientData) > 0 {
+			json.Unmarshal(p.PatientData, &fhirData)
+		}
+		fullName := ""
+		if len(fhirData.Name) > 0 {
+			fullName = fhirData.Name[0].Text
+		}
+		var scope []string
+		json.Unmarshal(p.Scope, &scope)
+		if scope == nil {
+			scope = []string{}
+		}
+		entries = append(entries, enrichedEntry{
+			Patient: patientInfo{
+				ID: p.PatientID.String(), FhirID: p.FHIRPatientID,
+				FullName: fullName, Gender: fhirData.Gender, BirthDate: fhirData.BirthDate,
+			},
+			Consent: consentInfo{
+				ID: p.ConsentID.String(), Status: p.Status, Scope: scope,
+				GrantedAt: p.GrantedAt.Format("2006-01-02T15:04:05Z"),
+			},
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"requests": entries, "total": len(entries)})
+}
+
 // BreakGlass handles POST /consent/break-glass
 func (h *ConsentHandler) BreakGlass(c *gin.Context) {
 	actorID := auth.GetActorID(c).String()
@@ -253,10 +397,10 @@ func (h *ConsentHandler) BreakGlass(c *gin.Context) {
 	consent, err := h.engine.RecordBreakGlass(c.Request.Context(), req, actorID)
 	if err != nil {
 		status := http.StatusInternalServerError
-		if strings.Contains(err.Error(), "at least 20") {
+		if errors.Is(err, ErrBreakGlassReason) || errors.Is(err, ErrBreakGlassRateLimit) {
 			status = http.StatusBadRequest
 		}
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, ErrPatientNotFound) {
 			status = http.StatusNotFound
 		}
 		c.JSON(status, gin.H{
@@ -287,10 +431,14 @@ func (h *ConsentHandler) GetAccessLog(c *gin.Context) {
 		return
 	}
 
-	// Query audit logs for this patient's resources
-	// Return access log showing who accessed what
-	c.JSON(http.StatusOK, gin.H{
-		"patientId": fhirID,
-		"message":   "Access log query",
-	})
+	entries, err := h.engine.GetAccessLog(c.Request.Context(), fhirID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"resourceType": "OperationOutcome",
+			"issue": []gin.H{{"severity": "error", "code": "exception", "diagnostics": err.Error()}},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"patientId": fhirID, "entries": entries, "total": len(entries)})
 }

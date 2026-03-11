@@ -1,6 +1,7 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
+  output: 'standalone',
   async rewrites() {
     return [
       {
@@ -13,6 +14,9 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   images: {
     domains: ['localhost'],
+    remotePatterns: [
+      { protocol: 'https', hostname: '**' },
+    ],
   },
   typescript: {
     ignoreBuildErrors: false,

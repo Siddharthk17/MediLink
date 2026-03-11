@@ -119,6 +119,9 @@ func (m *mockService) Ping(ctx context.Context) error {
 	}
 	return nil
 }
+func (m *mockService) ListDoctors(ctx context.Context, specialization string) ([]admin.DoctorSummary, error) {
+	return nil, nil
+}
 
 // Helpers
 

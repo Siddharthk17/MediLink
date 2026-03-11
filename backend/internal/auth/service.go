@@ -565,7 +565,9 @@ func (s *AuthService) recordTOTPFailure(ctx context.Context, userID uuid.UUID) {
 
 	// Set expiry on first attempt
 	if count == 1 {
-		s.redisClient.Expire(ctx, attemptsKey, totpAttemptWindow)
+		if err := s.redisClient.Expire(ctx, attemptsKey, totpAttemptWindow).Err(); err != nil {
+			s.logger.Warn().Err(err).Str("userID", userID.String()).Msg("failed to set expiry on TOTP attempts key")
+		}
 	}
 
 	s.logger.Info().Str("userID", userID.String()).Int64("attempts", count).Msg("failed TOTP attempt")
@@ -577,7 +579,9 @@ func (s *AuthService) recordTOTPFailure(ctx context.Context, userID uuid.UUID) {
 			return
 		}
 		// Clean up attempts key since lockout is now active
-		s.redisClient.Del(ctx, attemptsKey)
+		if err := s.redisClient.Del(ctx, attemptsKey).Err(); err != nil {
+			s.logger.Warn().Err(err).Str("userID", userID.String()).Msg("failed to clean up TOTP attempts key after lockout")
+		}
 		s.logger.Warn().Str("userID", userID.String()).Msg("TOTP account locked due to too many failed attempts")
 	}
 }
@@ -670,11 +674,19 @@ func (s *AuthService) GetMe(ctx context.Context, userID uuid.UUID) (*UserProfile
 
 	fullName := ""
 	if len(user.FullNameEnc) > 0 {
-		fullName, _ = s.encryptor.DecryptString(user.FullNameEnc)
+		var err error
+		fullName, err = s.encryptor.DecryptString(user.FullNameEnc)
+		if err != nil {
+			s.logger.Error().Err(err).Str("userID", userID.String()).Msg("failed to decrypt user full name")
+		}
 	}
 	phone := ""
 	if len(user.PhoneEnc) > 0 {
-		phone, _ = s.encryptor.DecryptString(user.PhoneEnc)
+		var err error
+		phone, err = s.encryptor.DecryptString(user.PhoneEnc)
+		if err != nil {
+			s.logger.Error().Err(err).Str("userID", userID.String()).Msg("failed to decrypt user phone")
+		}
 	}
 
 	profile := &UserProfile{
@@ -760,8 +772,13 @@ func (s *AuthService) VerifyTOTPSetup(ctx context.Context, userID uuid.UUID, cod
 		return nil, fmt.Errorf("internal error")
 	}
 
-	codes, _, err := s.totpSvc.GenerateBackupCodes()
+	codes, hashes, err := s.totpSvc.GenerateBackupCodes()
 	if err != nil {
+		return nil, fmt.Errorf("internal error")
+	}
+
+	if err := s.repo.StoreBackupCodes(ctx, userID, hashes); err != nil {
+		s.logger.Error().Err(err).Msg("failed to store backup codes")
 		return nil, fmt.Errorf("internal error")
 	}
 

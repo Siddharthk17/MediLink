@@ -34,6 +34,7 @@ export default function LabsPage({ params }: { params: Promise<{ id: string }> }
       const res = await fhirAPI.getLabTrends(id, selectedCode)
       return res.data
     },
+    refetchInterval: 120_000,
   })
 
   const observations = (data?.entry?.map((e) => e.resource).filter((r) => r.resourceType === 'Observation') || []) as Observation[]

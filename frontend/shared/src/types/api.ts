@@ -42,7 +42,7 @@ export interface ConsentedPatient {
   }
   consent: {
     id: string
-    status: 'active' | 'revoked' | 'expired'
+    status: 'active' | 'revoked' | 'expired' | 'pending' | 'rejected'
     scope: string[]
     grantedAt: string
     expiresAt?: string
@@ -103,4 +103,28 @@ export interface APIError {
     details?: { text: string }
     diagnostics?: string
   }>
+}
+
+export interface ConsentGrant {
+  id: string
+  patientId: string
+  providerId: string
+  providerName?: string
+  scope: string[]
+  status: 'active' | 'revoked' | 'expired' | 'pending' | 'rejected'
+  grantedAt: string
+  expiresAt?: string
+  revokedAt?: string
+  purpose: string
+}
+
+export interface AccessLogEntry {
+  id: string
+  action: string
+  resourceType: string
+  resourceId: string
+  accessedBy: string
+  accessedByName?: string
+  accessedAt: string
+  ipAddress?: string
 }

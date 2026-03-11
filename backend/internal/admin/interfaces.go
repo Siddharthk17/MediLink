@@ -10,6 +10,7 @@ type Service interface {
 	InviteResearcher(ctx context.Context, email, invitedBy string) error
 	SuspendPhysician(ctx context.Context, userID string) error
 	ReinstatePhysician(ctx context.Context, userID string) error
+	ListDoctors(ctx context.Context, specialization string) ([]DoctorSummary, error)
 	GetAuditLogs(ctx context.Context, filters AuditLogFilters, count, offset int) ([]AuditLogEntry, int, error)
 	GetPatientAuditLog(ctx context.Context, patientRef string, count, offset int) ([]AuditLogEntry, int, error)
 	GetActorAuditLog(ctx context.Context, actorID string, count, offset int) ([]AuditLogEntry, int, error)

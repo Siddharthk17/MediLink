@@ -77,6 +77,12 @@ type AuthRepository interface {
 	CountRecentFailedAttempts(ctx context.Context, emailHash string, since time.Time) (int, error)
 	CountRecentIPAttempts(ctx context.Context, ipAddress string, since time.Time) (int, error)
 	ClearFailedAttempts(ctx context.Context, emailHash string) error
+
+	// Backup codes
+	StoreBackupCodes(ctx context.Context, userID uuid.UUID, codeHashes []string) error
+	GetBackupCodes(ctx context.Context, userID uuid.UUID) ([]string, error)
+	MarkBackupCodeUsed(ctx context.Context, userID uuid.UUID, codeHash string) error
+	DeleteBackupCodes(ctx context.Context, userID uuid.UUID) error
 }
 
 // HashEmail returns the SHA-256 hex hash of a lowercased, trimmed email.
@@ -322,6 +328,58 @@ func (r *postgresAuthRepository) ClearFailedAttempts(ctx context.Context, emailH
 	_, err := r.db.ExecContext(ctx,
 		`DELETE FROM login_attempts WHERE email_hash = $1 AND success = FALSE`,
 		emailHash,
+	)
+	return err
+}
+
+func (r *postgresAuthRepository) StoreBackupCodes(ctx context.Context, userID uuid.UUID, codeHashes []string) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Delete any existing codes first
+	if _, err := tx.ExecContext(ctx, `DELETE FROM totp_backup_codes WHERE user_id = $1`, userID); err != nil {
+		return fmt.Errorf("failed to delete old backup codes: %w", err)
+	}
+
+	for _, hash := range codeHashes {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO totp_backup_codes (user_id, code_hash) VALUES ($1, $2)`,
+			userID, hash,
+		); err != nil {
+			return fmt.Errorf("failed to store backup code: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (r *postgresAuthRepository) GetBackupCodes(ctx context.Context, userID uuid.UUID) ([]string, error) {
+	var hashes []string
+	err := r.db.SelectContext(ctx, &hashes,
+		`SELECT code_hash FROM totp_backup_codes WHERE user_id = $1 AND used_at IS NULL ORDER BY created_at`,
+		userID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get backup codes: %w", err)
+	}
+	return hashes, nil
+}
+
+func (r *postgresAuthRepository) MarkBackupCodeUsed(ctx context.Context, userID uuid.UUID, codeHash string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE totp_backup_codes SET used_at = NOW() WHERE user_id = $1 AND code_hash = $2 AND used_at IS NULL`,
+		userID, codeHash,
+	)
+	return err
+}
+
+func (r *postgresAuthRepository) DeleteBackupCodes(ctx context.Context, userID uuid.UUID) error {
+	_, err := r.db.ExecContext(ctx,
+		`DELETE FROM totp_backup_codes WHERE user_id = $1`,
+		userID,
 	)
 	return err
 }

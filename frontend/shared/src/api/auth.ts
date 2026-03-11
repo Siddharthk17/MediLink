@@ -2,6 +2,9 @@ import { apiClient } from './client'
 import type { LoginResponse, RegisterResponse } from '../types/api'
 
 export const authAPI = {
+  login: (email: string, password: string) =>
+    apiClient.post<LoginResponse>('/auth/login', { email, password }),
+
   loginPhysician: (email: string, password: string) =>
     apiClient.post<LoginResponse>('/auth/login', { email, password }),
 
@@ -14,6 +17,15 @@ export const authAPI = {
     specialization?: string
     organizationId?: string
   }) => apiClient.post<RegisterResponse>('/auth/register/physician', data),
+
+  registerPatient: (data: {
+    email: string
+    password: string
+    fullName: string
+    phone?: string
+    dateOfBirth: string
+    gender: string
+  }) => apiClient.post<RegisterResponse>('/auth/register/patient', data),
 
   verifyTOTP: (code: string) =>
     apiClient.post<LoginResponse>('/auth/login/verify-totp', { code }),
@@ -43,4 +55,10 @@ export const authAPI = {
       phone?: string
       email: string
     }>('/auth/me'),
+
+  changePassword: (data: { currentPassword: string; newPassword: string }) =>
+    apiClient.post('/auth/password/change', {
+      oldPassword: data.currentPassword,
+      newPassword: data.newPassword,
+    }),
 }

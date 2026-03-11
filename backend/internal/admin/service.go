@@ -69,6 +69,16 @@ func (s *AdminService) ReinstatePhysician(ctx context.Context, userID string) er
 	return s.repo.ReinstatePhysician(ctx, userID)
 }
 
+// ListDoctors returns active physicians for the directory.
+func (s *AdminService) ListDoctors(ctx context.Context, specialization string) ([]DoctorSummary, error) {
+	doctors, err := s.repo.ListDoctors(ctx, specialization)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("failed to list doctors")
+		return nil, err
+	}
+	return doctors, nil
+}
+
 // GetAuditLogs returns paginated audit log entries.
 func (s *AdminService) GetAuditLogs(ctx context.Context, filters AuditLogFilters, count, offset int) ([]AuditLogEntry, int, error) {
 	return s.repo.GetAuditLogs(ctx, filters, count, offset)

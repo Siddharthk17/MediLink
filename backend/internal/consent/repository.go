@@ -42,10 +42,12 @@ type ConsentRepository interface {
 	Create(ctx context.Context, consent *Consent) error
 	GetByID(ctx context.Context, id uuid.UUID) (*Consent, error)
 	Update(ctx context.Context, consent *Consent) error
+	UpdateStatus(ctx context.Context, consentID uuid.UUID, status string) error
 	GetActiveConsent(ctx context.Context, patientID, providerID uuid.UUID) (*Consent, error)
 	RevokeConsent(ctx context.Context, consentID uuid.UUID, revokedBy uuid.UUID) error
 	GetPatientConsents(ctx context.Context, patientID uuid.UUID) ([]*Consent, error)
 	GetPhysicianPatients(ctx context.Context, providerID uuid.UUID) ([]*ConsentedPatient, error)
+	GetPendingRequests(ctx context.Context, providerID uuid.UUID) ([]*ConsentedPatient, error)
 	CheckConsent(ctx context.Context, providerID uuid.UUID, patientFHIRID string) (bool, []string, error)
 	GetPatientFHIRID(ctx context.Context, userID uuid.UUID) (string, error)
 	GetUserIDByFHIRPatientID(ctx context.Context, fhirPatientID string) (uuid.UUID, error)
@@ -60,10 +62,14 @@ func NewConsentRepository(db *sqlx.DB) ConsentRepository {
 }
 
 func (r *postgresConsentRepository) Create(ctx context.Context, consent *Consent) error {
-	query := `INSERT INTO consents (patient_id, provider_id, scope, expires_at, purpose, notes, created_by)
-              VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, granted_at`
+	status := consent.Status
+	if status == "" {
+		status = "active"
+	}
+	query := `INSERT INTO consents (patient_id, provider_id, scope, status, expires_at, purpose, notes, created_by)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, granted_at`
 	return r.db.QueryRowContext(ctx, query,
-		consent.PatientID, consent.ProviderID, consent.Scope,
+		consent.PatientID, consent.ProviderID, consent.Scope, status,
 		consent.ExpiresAt, consent.Purpose, consent.Notes, consent.CreatedBy,
 	).Scan(&consent.ID, &consent.GrantedAt)
 }
@@ -90,7 +96,8 @@ func (r *postgresConsentRepository) Update(ctx context.Context, consent *Consent
 func (r *postgresConsentRepository) GetActiveConsent(ctx context.Context, patientID, providerID uuid.UUID) (*Consent, error) {
 	var c Consent
 	query := `SELECT * FROM consents WHERE patient_id = $1 AND provider_id = $2 
-              AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW())`
+              AND revoked_at IS NULL AND status IN ('active', 'pending')
+              AND (expires_at IS NULL OR expires_at > NOW())`
 	err := r.db.GetContext(ctx, &c, query, patientID, providerID)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -104,6 +111,12 @@ func (r *postgresConsentRepository) GetActiveConsent(ctx context.Context, patien
 func (r *postgresConsentRepository) RevokeConsent(ctx context.Context, consentID uuid.UUID, revokedBy uuid.UUID) error {
 	query := `UPDATE consents SET revoked_at = NOW(), revoked_by = $1, status = 'revoked' WHERE id = $2`
 	_, err := r.db.ExecContext(ctx, query, revokedBy, consentID)
+	return err
+}
+
+func (r *postgresConsentRepository) UpdateStatus(ctx context.Context, consentID uuid.UUID, status string) error {
+	query := `UPDATE consents SET status = $1 WHERE id = $2`
+	_, err := r.db.ExecContext(ctx, query, status, consentID)
 	return err
 }
 
@@ -122,8 +135,22 @@ func (r *postgresConsentRepository) GetPhysicianPatients(ctx context.Context, pr
               FROM consents c JOIN users u ON c.patient_id = u.id
               LEFT JOIN fhir_resources f ON f.resource_id = u.fhir_patient_id
                 AND f.resource_type = 'Patient' AND f.deleted_at IS NULL
-              WHERE c.provider_id = $1 AND c.revoked_at IS NULL
+              WHERE c.provider_id = $1 AND c.status = 'active' AND c.revoked_at IS NULL
               AND (c.expires_at IS NULL OR c.expires_at > NOW())
+              ORDER BY c.granted_at DESC`
+	err := r.db.SelectContext(ctx, &patients, query, providerID)
+	return patients, err
+}
+
+func (r *postgresConsentRepository) GetPendingRequests(ctx context.Context, providerID uuid.UUID) ([]*ConsentedPatient, error) {
+	var patients []*ConsentedPatient
+	query := `SELECT c.id, c.patient_id, c.scope, c.granted_at, c.expires_at, c.status,
+                     u.fhir_patient_id,
+                     COALESCE(f.data, '{}'::jsonb) as patient_data
+              FROM consents c JOIN users u ON c.patient_id = u.id
+              LEFT JOIN fhir_resources f ON f.resource_id = u.fhir_patient_id
+                AND f.resource_type = 'Patient' AND f.deleted_at IS NULL
+              WHERE c.provider_id = $1 AND c.status = 'pending'
               ORDER BY c.granted_at DESC`
 	err := r.db.SelectContext(ctx, &patients, query, providerID)
 	return patients, err
@@ -135,7 +162,7 @@ func (r *postgresConsentRepository) CheckConsent(ctx context.Context, providerID
 	query := `SELECT c.* FROM consents c
               JOIN users u ON c.patient_id = u.id
               WHERE c.provider_id = $1 AND u.fhir_patient_id = $2
-              AND c.revoked_at IS NULL AND (c.expires_at IS NULL OR c.expires_at > NOW())`
+              AND c.status = 'active' AND c.revoked_at IS NULL AND (c.expires_at IS NULL OR c.expires_at > NOW())`
 	err := r.db.GetContext(ctx, &consent, query, providerID, patientFHIRID)
 	if err == sql.ErrNoRows {
 		return false, nil, nil

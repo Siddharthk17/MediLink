@@ -150,6 +150,37 @@ func (m *mockConsentRepo) GetPhysicianPatients(ctx context.Context, providerID u
 	return result, nil
 }
 
+func (m *mockConsentRepo) GetPendingRequests(ctx context.Context, providerID uuid.UUID) ([]*consent.ConsentedPatient, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var result []*consent.ConsentedPatient
+	for _, c := range m.consents {
+		if c.ProviderID == providerID && c.Status == "pending" && c.RevokedAt == nil {
+			fhirID := m.patientFHIRIDs[c.PatientID]
+			result = append(result, &consent.ConsentedPatient{
+				PatientID:     c.PatientID,
+				FHIRPatientID: fhirID,
+				Scope:         c.Scope,
+				GrantedAt:     c.GrantedAt,
+				ConsentID:     c.ID,
+				Status:        c.Status,
+			})
+		}
+	}
+	return result, nil
+}
+
+func (m *mockConsentRepo) UpdateStatus(ctx context.Context, consentID uuid.UUID, status string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c, ok := m.consents[consentID]
+	if !ok {
+		return fmt.Errorf("consent not found")
+	}
+	c.Status = status
+	return nil
+}
+
 func (m *mockConsentRepo) CheckConsent(ctx context.Context, providerID uuid.UUID, patientFHIRID string) (bool, []string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -282,7 +313,7 @@ func TestGrantConsent_201(t *testing.T) {
 
 	entries := auditLog.entries()
 	require.Len(t, entries, 1)
-	assert.Equal(t, "grant", entries[0].Action)
+	assert.Equal(t, "request", entries[0].Action)
 	assert.Equal(t, 201, entries[0].StatusCode)
 	assert.True(t, entries[0].Success)
 }

@@ -120,7 +120,7 @@ func TestGetPreferences_RowExists_Returns200(t *testing.T) {
 		EmailBreakGlass:       true,
 		EmailAccountLocked:    true,
 		PreferredLanguage:     "fr",
-		FCMToken:              "fcm-token-123",
+		FCMToken:              ptrString("fcm-token-123"),
 	}
 
 	repo := &mockPrefsRepo{prefs: prefs}
@@ -182,3 +182,5 @@ func TestUpdatePreferences_BreakGlassAlwaysTrue(t *testing.T) {
 	assert.True(t, got.EmailBreakGlass)
 	assert.True(t, got.EmailAccountLocked)
 }
+
+func ptrString(s string) *string { return &s }

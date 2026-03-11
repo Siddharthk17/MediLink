@@ -85,21 +85,16 @@ func (p *DocumentProcessor) ProcessDocument(ctx context.Context, t *asynq.Task) 
 		return fmt.Errorf("update processing started: %w", err)
 	}
 
-	// Step 3: Download file from MinIO (get presigned URL and content)
-	presignedURL, err := p.storage.GetPresignedURL(ctx, job.MinioBucket, job.MinioKey)
+	// Step 3: Download file from MinIO
+	fileBytes, err := p.storage.DownloadFile(ctx, job.MinioBucket, job.MinioKey)
 	if err != nil {
-		errMsg := "failed to get file from MinIO: " + err.Error()
+		errMsg := "failed to download file from MinIO: " + err.Error()
 		_ = p.jobs.UpdateStatus(ctx, jobID, "failed", &errMsg)
 		return nil
 	}
 
-	// For OCR, we need the raw bytes - use the MinIO client directly
-	// Since we stored the file in MinIO, we'll simulate getting it
-	// In production, we'd download the file bytes from the storage
-	_ = presignedURL // URL is for client access, not for internal processing
-
-	// Step 4: Run OCR (simulated with empty bytes for now — real impl would download)
-	ocrResult, err := p.ocr.ExtractText(ctx, []byte{}, job.ContentType)
+	// Step 4: Run OCR
+	ocrResult, err := p.ocr.ExtractText(ctx, fileBytes, job.ContentType)
 	if err != nil || ocrResult.Confidence < 30.0 {
 		errMsg := "Image quality too low for OCR"
 		if err != nil {

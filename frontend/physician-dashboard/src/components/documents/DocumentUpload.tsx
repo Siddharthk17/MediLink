@@ -67,7 +67,7 @@ export function DocumentUpload({ patientId }: DocumentUploadProps) {
         toast.error(`Failed to upload ${file.name}`)
       }
     }
-  }, [patientId, setJobs, startPolling])
+  }, [patientId, queryClient, setJobs, startPolling])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,

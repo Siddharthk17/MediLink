@@ -20,6 +20,7 @@ type StorageClient interface {
 	UploadFile(ctx context.Context, patientFHIRID string, file io.Reader, fileName string, contentType string, size int64) (string, error)
 	UploadWithKey(ctx context.Context, bucket, key string, data io.Reader, contentType string, size int64) error
 	GetPresignedURL(ctx context.Context, bucket, key string) (string, error)
+	DownloadFile(ctx context.Context, bucket, key string) ([]byte, error)
 	DeleteFile(ctx context.Context, bucket, key string) error
 	Health(ctx context.Context) bool
 }
@@ -104,6 +105,21 @@ func (m *MinIOClient) GetPresignedURL(ctx context.Context, bucket, key string) (
 	return url.String(), nil
 }
 
+// DownloadFile retrieves a file's bytes from MinIO.
+func (m *MinIOClient) DownloadFile(ctx context.Context, bucket, key string) ([]byte, error) {
+	obj, err := m.client.GetObject(ctx, bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("minio download: %w", err)
+	}
+	defer obj.Close()
+
+	data, err := io.ReadAll(obj)
+	if err != nil {
+		return nil, fmt.Errorf("minio read: %w", err)
+	}
+	return data, nil
+}
+
 // DeleteFile removes a file from MinIO.
 func (m *MinIOClient) DeleteFile(ctx context.Context, bucket, key string) error {
 	return m.client.RemoveObject(ctx, bucket, key, minio.RemoveObjectOptions{})
@@ -141,6 +157,9 @@ func (n *NoopStorageClient) UploadWithKey(_ context.Context, _, key string, _ io
 }
 func (n *NoopStorageClient) GetPresignedURL(_ context.Context, _, key string) (string, error) {
 	return "http://localhost:9000/" + key, nil
+}
+func (n *NoopStorageClient) DownloadFile(_ context.Context, _, _ string) ([]byte, error) {
+	return []byte("noop file content"), nil
 }
 func (n *NoopStorageClient) DeleteFile(_ context.Context, _, _ string) error { return nil }
 func (n *NoopStorageClient) Health(_ context.Context) bool                   { return true }

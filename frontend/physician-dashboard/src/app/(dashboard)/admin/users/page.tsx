@@ -41,6 +41,7 @@ export default function AdminUsersPage() {
       return res.data.users ?? []
     },
     enabled: user?.role === 'admin',
+    refetchInterval: 120_000,
   })
 
   const approveMutation = useMutation({

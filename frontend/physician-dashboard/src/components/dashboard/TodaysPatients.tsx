@@ -23,6 +23,7 @@ export const TodaysPatients = React.memo(function TodaysPatients() {
       return res.data
     },
     staleTime: 60_000,
+    refetchInterval: 30_000,
   })
 
   const patients: ConsentedPatient[] = data?.patients || []

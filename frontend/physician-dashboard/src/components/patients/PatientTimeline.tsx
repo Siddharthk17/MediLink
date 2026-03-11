@@ -38,6 +38,7 @@ export const PatientTimeline = React.memo(function PatientTimeline({ patientId }
       const res = await fhirAPI.getTimeline(patientId, params)
       return res.data
     },
+    refetchInterval: 120_000,
   })
 
   const entries = data?.entry || []
@@ -88,7 +89,7 @@ export const PatientTimeline = React.memo(function PatientTimeline({ patientId }
       ) : (
         <div>
           {entries.map((entry, i: number) => (
-            <TimelineEvent key={(entry.resource as any).id ?? `timeline-${i}`} resource={entry.resource as any} isLast={i === entries.length - 1} />
+            <TimelineEvent key={(entry.resource as unknown as { id?: string }).id ?? `timeline-${i}`} resource={entry.resource as unknown as { resourceType: string; id: string; [key: string]: unknown }} isLast={i === entries.length - 1} />
           ))}
         </div>
       )}

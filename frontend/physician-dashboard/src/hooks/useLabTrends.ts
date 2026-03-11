@@ -11,5 +11,6 @@ export function useLabTrends(patientId: string, loincCode: string) {
       return res.data
     },
     enabled: !!loincCode,
+    refetchInterval: 120_000,
   })
 }

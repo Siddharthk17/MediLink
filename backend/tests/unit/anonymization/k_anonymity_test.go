@@ -53,6 +53,9 @@ func (m *mockStorage) GetPresignedURL(_ context.Context, _, _ string) (string, e
 	return "", nil
 }
 func (m *mockStorage) DeleteFile(_ context.Context, _, _ string) error { return nil }
+func (m *mockStorage) DownloadFile(_ context.Context, _, _ string) ([]byte, error) {
+	return []byte("mock"), nil
+}
 func (m *mockStorage) Health(_ context.Context) bool                   { return true }
 
 type mockAuditLogger struct{}

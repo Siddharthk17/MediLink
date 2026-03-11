@@ -21,7 +21,9 @@ export class ErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error('Unhandled error:', error, info)
+    if (process.env.NODE_ENV === 'development') {
+      console.error('Unhandled error:', error, info)
+    }
   }
 
   render() {

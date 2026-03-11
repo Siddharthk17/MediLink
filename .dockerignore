@@ -1,0 +1,47 @@
+# Git
+.git
+.gitignore
+
+# Node
+node_modules
+**/node_modules
+
+# Next.js build output
+**/.next
+**/out
+
+# Test and coverage
+**/coverage
+**/__tests__
+**/*.test.*
+**/*.spec.*
+**/.vitest
+
+# IDE
+.vscode
+.idea
+**/.DS_Store
+
+# Documentation
+*.md
+docs/
+LICENSE
+
+# Backend (not needed for frontend builds)
+backend/
+
+# Mobile (not needed)
+mobile/
+
+# Infrastructure (not needed for frontend builds)
+infra/
+.github/
+
+# Environment files (secrets)
+**/.env
+**/.env.local
+**/.env.production
+!**/.env.example
+
+# Scripts
+scripts/

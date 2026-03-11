@@ -27,6 +27,7 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
       const res = await fhirAPI.getPatient(id)
       return res.data
     },
+    refetchInterval: 60_000,
   })
 
   if (isLoading) {

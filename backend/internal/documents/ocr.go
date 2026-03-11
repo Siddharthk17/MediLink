@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -107,21 +109,57 @@ func (t *TesseractOCR) processImage(ctx context.Context, imageBytes []byte) (str
 }
 
 func (t *TesseractOCR) processPDF(ctx context.Context, pdfBytes []byte) (string, float64, error) {
-	// For PDF, we try using Tesseract directly if it supports PDF input
-	// Otherwise, treat the entire PDF as an image (which Tesseract can sometimes handle)
-	textCmd := exec.CommandContext(ctx, "tesseract",
-		"stdin", "stdout",
-		"-l", "eng+hin+mar",
-		"--oem", "3",
-		"--psm", "6",
-	)
-	textCmd.Stdin = bytes.NewReader(pdfBytes)
-	textOutput, err := textCmd.Output()
+	tmpDir, err := os.MkdirTemp("", "medilink-ocr-*")
 	if err != nil {
-		return "", 0, fmt.Errorf("tesseract PDF extraction: %w", err)
+		return "", 0, fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	pdfPath := filepath.Join(tmpDir, "input.pdf")
+	if err := os.WriteFile(pdfPath, pdfBytes, 0600); err != nil {
+		return "", 0, fmt.Errorf("write temp pdf: %w", err)
 	}
 
-	return string(textOutput), 70.0, nil // default confidence for PDFs
+	// Convert PDF pages to PNG images using pdftoppm
+	imgPrefix := filepath.Join(tmpDir, "page")
+	convertCmd := exec.CommandContext(ctx, "pdftoppm",
+		"-png", "-r", "300", pdfPath, imgPrefix,
+	)
+	if output, err := convertCmd.CombinedOutput(); err != nil {
+		return "", 0, fmt.Errorf("pdftoppm conversion: %w: %s", err, string(output))
+	}
+
+	// Find generated page images
+	pages, err := filepath.Glob(imgPrefix + "-*.png")
+	if err != nil || len(pages) == 0 {
+		return "", 0, fmt.Errorf("no pages extracted from PDF")
+	}
+
+	// OCR each page image
+	var allText strings.Builder
+	var totalConf, confCount float64
+
+	for _, pagePath := range pages {
+		pageBytes, err := os.ReadFile(pagePath)
+		if err != nil {
+			continue
+		}
+		text, conf, err := t.processImage(ctx, pageBytes)
+		if err != nil {
+			continue
+		}
+		allText.WriteString(text)
+		allText.WriteString("\n")
+		totalConf += conf
+		confCount++
+	}
+
+	if confCount == 0 {
+		return "", 0, fmt.Errorf("OCR failed on all PDF pages")
+	}
+
+	avgConf := totalConf / confCount
+	return allText.String(), avgConf, nil
 }
 
 func parseConfidenceFromTSV(tsv string) float64 {

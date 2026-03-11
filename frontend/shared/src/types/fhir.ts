@@ -67,7 +67,7 @@ export interface Condition extends FHIRResource {
 
 export interface MedicationRequest extends FHIRResource {
   resourceType: 'MedicationRequest'
-  status: 'active' | 'on-hold' | 'cancelled' | 'completed' | 'entered-in-error' | 'stopped'
+  status: 'active' | 'on-hold' | 'cancelled' | 'completed' | 'entered-in-error' | 'stopped' | 'draft' | 'unknown'
   intent: 'proposal' | 'plan' | 'order'
   medicationCodeableConcept?: CodeableConcept
   subject: Reference

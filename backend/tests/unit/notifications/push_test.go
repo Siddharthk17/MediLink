@@ -99,13 +99,13 @@ func (s *testPushService) SendToUser(ctx context.Context, userID string, notif n
 	if prefs != nil && !isTypeEnabled(prefs, notifType) {
 		return nil
 	}
-	if prefs == nil || prefs.FCMToken == "" {
+	if prefs == nil || prefs.FCMToken == nil || *prefs.FCMToken == "" {
 		return nil
 	}
 
 	s.sendCalled = true
 	if s.sendFn != nil {
-		err := s.sendFn(prefs.FCMToken, notif)
+		err := s.sendFn(*prefs.FCMToken, notif)
 		if err != nil {
 			// FCM errors are logged but never returned
 			return nil
@@ -153,7 +153,7 @@ func allEnabledPrefs() *notifications.NotificationPreferences {
 		PushLabResultReady:   true,
 		PushConsentRequest:   true,
 		PushCriticalLab:      true,
-		FCMToken:             "fcm-test-token-abc",
+		FCMToken:             ptrStr("fcm-test-token-abc"),
 	}
 }
 
@@ -170,7 +170,7 @@ func TestSendToUser_Success(t *testing.T) {
 
 func TestSendToUser_NoFCMToken(t *testing.T) {
 	prefs := allEnabledPrefs()
-	prefs.FCMToken = ""
+	prefs.FCMToken = nil
 	repo := &mockPrefsRepo{prefs: prefs}
 	svc := &testPushService{prefRepo: repo}
 
@@ -256,3 +256,5 @@ func TestHealth_ReturnsTrue(t *testing.T) {
 	svc := notifications.NewNoopPushService(zerolog.Nop())
 	assert.True(t, svc.Health(context.Background()))
 }
+
+func ptrStr(s string) *string { return &s }

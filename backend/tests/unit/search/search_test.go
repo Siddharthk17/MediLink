@@ -200,22 +200,27 @@ func TestUnifiedSearch_PhysicianRequiresPatient(t *testing.T) {
 	defer db.Close()
 	sqlxDB := sqlx.NewDb(db, "postgres")
 
-	_ = dbMock // no DB expectations needed — error before any DB call for consent
+	physicianID := "00000000-0000-0000-0000-000000000002"
 
-	mock := &mockSearchClient{}
+	// Physician without ?patient= auto-scopes to all consented patients.
+	// Return empty list of consented patients — physician has no patients.
+	dbMock.ExpectQuery("SELECT u.fhir_patient_id FROM consents c").
+		WithArgs(physicianID).
+		WillReturnRows(sqlmock.NewRows([]string{"fhir_patient_id"}))
+
+	dbMock.ExpectExec("INSERT INTO search_queries").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	mock := &mockSearchClient{
+		searchMultiIndexFn: func(_ context.Context, _ []string, query map[string]interface{}) (*pkgsearch.MultiSearchResponse, error) {
+			return defaultESResponse(), nil
+		},
+	}
 	handler := newTestHandler(mock, sqlxDB)
 
-	physicianID := "00000000-0000-0000-0000-000000000002"
 	w := performRequest(handler, "/search?q=test", physicianID, "physician")
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-
-	body := parseBody(t, w)
-	assert.Equal(t, "OperationOutcome", body["resourceType"])
-
-	issues := body["issue"].([]interface{})
-	diag := issues[0].(map[string]interface{})["diagnostics"].(string)
-	assert.Contains(t, diag, "patient parameter required")
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestUnifiedSearch_AdminUnrestricted(t *testing.T) {

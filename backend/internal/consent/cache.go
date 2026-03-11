@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog/log"
 )
 
 const consentCacheTTL = 5 * time.Minute
@@ -56,14 +57,22 @@ func (cc *ConsentCache) Set(ctx context.Context, providerID, patientFHIRID strin
 	if !granted {
 		val = "denied"
 	} else {
-		scopeJSON, _ := json.Marshal(scope)
+		scopeJSON, err := json.Marshal(scope)
+		if err != nil {
+			log.Warn().Err(err).Str("key", key).Msg("consent cache: failed to marshal scope")
+			return
+		}
 		val = "granted:" + string(scopeJSON)
 	}
-	cc.redis.Set(ctx, key, val, consentCacheTTL)
+	if err := cc.redis.Set(ctx, key, val, consentCacheTTL).Err(); err != nil {
+		log.Warn().Err(err).Str("key", key).Msg("consent cache: failed to set")
+	}
 }
 
 // Invalidate removes a consent entry from cache immediately.
 func (cc *ConsentCache) Invalidate(ctx context.Context, providerID, patientFHIRID string) {
 	key := fmt.Sprintf("consent:%s:%s", providerID, patientFHIRID)
-	cc.redis.Del(ctx, key)
+	if err := cc.redis.Del(ctx, key).Err(); err != nil {
+		log.Warn().Err(err).Str("key", key).Msg("consent cache: failed to invalidate")
+	}
 }

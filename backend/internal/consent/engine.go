@@ -3,6 +3,7 @@ package consent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,6 +13,21 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
+)
+
+// Sentinel errors for consent operations.
+var (
+	ErrConsentNotFound     = errors.New("consent not found")
+	ErrSelfConsent         = errors.New("cannot grant consent to yourself")
+	ErrProviderNotFound    = errors.New("provider not found")
+	ErrProviderNotPhysician = errors.New("provider must be a physician")
+	ErrInvalidScope        = errors.New("invalid scope type")
+	ErrExpiredDate         = errors.New("expiresAt must be in the future")
+	ErrNotPending          = errors.New("consent is not in pending status")
+	ErrUnauthorizedAction  = errors.New("unauthorized to perform this action")
+	ErrPatientNotFound     = errors.New("patient not found")
+	ErrBreakGlassReason    = errors.New("break-glass reason must be at least 20 characters")
+	ErrBreakGlassRateLimit = errors.New("break-glass rate limit exceeded: maximum 3 emergency accesses per 24 hours")
 )
 
 // UserLookup retrieves basic contact info for notification purposes.
@@ -51,6 +67,16 @@ type BreakGlassRequest struct {
 	ClinicalContext string `json:"clinicalContext"`
 }
 
+type AccessLogEntry struct {
+	ID             string    `db:"id" json:"id"`
+	AccessedBy     string    `db:"user_id" json:"accessedBy"`
+	AccessedByName string    `db:"accessor_name" json:"accessedByName"`
+	Action         string    `db:"action" json:"action"`
+	ResourceType   string    `db:"resource_type" json:"resourceType"`
+	ResourceID     string    `db:"resource_id" json:"resourceId"`
+	AccessedAt     time.Time `db:"created_at" json:"accessedAt"`
+}
+
 type BreakGlassNotification struct {
 	PatientName   string
 	PhysicianName string
@@ -65,12 +91,17 @@ type ConsentEngine interface {
 	GetConsentScope(ctx context.Context, providerID, patientFHIRID string) ([]string, error)
 	GrantConsent(ctx context.Context, req GrantConsentRequest, patientUserID string) (*Consent, error)
 	RevokeConsent(ctx context.Context, consentID string, actorUserID string, actorRole string) error
+	AcceptConsent(ctx context.Context, consentID string, physicianUserID string) error
+	DeclineConsent(ctx context.Context, consentID string, physicianUserID string, reason string) error
 	GetPatientConsents(ctx context.Context, patientUserID string) ([]*Consent, error)
 	GetPhysicianPatients(ctx context.Context, physicianUserID string) ([]*ConsentedPatient, error)
+	GetPendingRequests(ctx context.Context, physicianUserID string) ([]*ConsentedPatient, error)
 	RecordBreakGlass(ctx context.Context, req BreakGlassRequest, physicianUserID string) (*Consent, error)
 	InvalidateCache(ctx context.Context, providerID, patientFHIRID string)
 	GetPatientFHIRID(ctx context.Context, userID string) (string, error)
 	GetConsentByID(ctx context.Context, consentID uuid.UUID) (*Consent, error)
+	GetAccessLog(ctx context.Context, patientFHIRID string) ([]AccessLogEntry, error)
+	GetUserDisplayName(ctx context.Context, userID uuid.UUID) string
 }
 
 type consentEngine struct {
@@ -188,7 +219,7 @@ func (e *consentEngine) GrantConsent(ctx context.Context, req GrantConsentReques
 
 	// Cannot grant consent to yourself
 	if patientUUID == providerUUID {
-		return nil, fmt.Errorf("cannot grant consent to yourself")
+		return nil, ErrSelfConsent
 	}
 
 	// Validate provider is an active physician
@@ -196,10 +227,10 @@ func (e *consentEngine) GrantConsent(ctx context.Context, req GrantConsentReques
 		var role string
 		err := e.db.GetContext(ctx, &role, "SELECT role FROM users WHERE id = $1 AND status = 'active' AND deleted_at IS NULL", req.ProviderUserID)
 		if err != nil {
-			return nil, fmt.Errorf("provider not found")
+			return nil, ErrProviderNotFound
 		}
 		if role != "physician" {
-			return nil, fmt.Errorf("provider must be a physician")
+			return nil, ErrProviderNotPhysician
 		}
 	}
 
@@ -210,13 +241,13 @@ func (e *consentEngine) GrantConsent(ctx context.Context, req GrantConsentReques
 	}
 	for _, s := range scope {
 		if !validScopeTypes[s] {
-			return nil, fmt.Errorf("invalid scope type: %s", s)
+			return nil, fmt.Errorf("%w: %s", ErrInvalidScope, s)
 		}
 	}
 
 	// Validate expiry
 	if req.ExpiresAt != nil && req.ExpiresAt.Before(time.Now()) {
-		return nil, fmt.Errorf("expiresAt must be in the future")
+		return nil, ErrExpiredDate
 	}
 
 	purpose := req.Purpose
@@ -248,11 +279,13 @@ func (e *consentEngine) GrantConsent(ctx context.Context, req GrantConsentReques
 		return existing, nil
 	}
 
-	// Create new consent
+	// Create new consent — patients create 'pending', admins create 'active'
+	status := "pending"
 	consent := &Consent{
 		PatientID:  patientUUID,
 		ProviderID: providerUUID,
 		Scope:      scopeJSON,
+		Status:     status,
 		ExpiresAt:  req.ExpiresAt,
 		Purpose:    purpose,
 		Notes:      req.Notes,
@@ -269,7 +302,7 @@ func (e *consentEngine) GrantConsent(ctx context.Context, req GrantConsentReques
 		UserRole:     "patient",
 		ResourceType: "Consent",
 		ResourceID:   consent.ID.String(),
-		Action:       "grant",
+		Action:       "request",
 		Purpose:      purpose,
 		Success:      true,
 		StatusCode:   201,
@@ -294,7 +327,7 @@ func (e *consentEngine) RevokeConsent(ctx context.Context, consentID string, act
 		return err
 	}
 	if consent == nil {
-		return fmt.Errorf("consent not found")
+		return ErrConsentNotFound
 	}
 
 	// Already revoked — idempotent
@@ -304,7 +337,7 @@ func (e *consentEngine) RevokeConsent(ctx context.Context, consentID string, act
 
 	// Only the patient, the provider, or admin can revoke
 	if actorRole != "admin" && consent.PatientID != actorUUID && consent.ProviderID != actorUUID {
-		return fmt.Errorf("only the patient who granted consent or the provider can revoke it")
+		return fmt.Errorf("%w: only the patient who granted consent or the provider can revoke it", ErrUnauthorizedAction)
 	}
 
 	if err := e.repo.RevokeConsent(ctx, consentUUID, actorUUID); err != nil {
@@ -354,7 +387,7 @@ func (e *consentEngine) RecordBreakGlass(ctx context.Context, req BreakGlassRequ
 	}
 
 	if len(req.Reason) < 20 {
-		return nil, fmt.Errorf("break-glass reason must be at least 20 characters")
+		return nil, ErrBreakGlassReason
 	}
 
 	// Rate limit: max 3 break-glass accesses per physician per 24 hours
@@ -369,14 +402,14 @@ func (e *consentEngine) RecordBreakGlass(ctx context.Context, req BreakGlassRequ
 		}
 		if count > 3 {
 			e.rdb.Decr(ctx, key)
-			return nil, fmt.Errorf("break-glass rate limit exceeded: maximum 3 emergency accesses per 24 hours")
+			return nil, ErrBreakGlassRateLimit
 		}
 	}
 
 	// Find patient user ID from FHIR ID
 	patientUserID, err := e.repo.GetUserIDByFHIRPatientID(ctx, req.PatientFHIRID)
 	if err != nil {
-		return nil, fmt.Errorf("patient not found: %w", err)
+		return nil, fmt.Errorf("%w: %v", ErrPatientNotFound, err)
 	}
 
 	// Create temporary 24-hour consent
@@ -455,7 +488,149 @@ func (e *consentEngine) GetPatientFHIRID(ctx context.Context, userID string) (st
 	return e.repo.GetPatientFHIRID(ctx, uid)
 }
 
+// AcceptConsent allows a physician to accept a pending consent request.
+func (e *consentEngine) AcceptConsent(ctx context.Context, consentID string, physicianUserID string) error {
+	consentUUID, err := uuid.Parse(consentID)
+	if err != nil {
+		return fmt.Errorf("invalid consent ID: %w", err)
+	}
+	physicianUUID, err := uuid.Parse(physicianUserID)
+	if err != nil {
+		return fmt.Errorf("invalid physician ID: %w", err)
+	}
+
+	consent, err := e.repo.GetByID(ctx, consentUUID)
+	if err != nil {
+		return err
+	}
+	if consent == nil {
+		return ErrConsentNotFound
+	}
+	if consent.ProviderID != physicianUUID {
+		return fmt.Errorf("%w: only the requested physician can accept this consent", ErrUnauthorizedAction)
+	}
+	if consent.Status != "pending" {
+		return ErrNotPending
+	}
+
+	if err := e.repo.UpdateStatus(ctx, consentUUID, "active"); err != nil {
+		return err
+	}
+
+	// Invalidate cache to allow immediate access
+	fhirID, _ := e.repo.GetPatientFHIRID(ctx, consent.PatientID)
+	if e.cache != nil && fhirID != "" {
+		e.cache.Invalidate(ctx, consent.ProviderID.String(), fhirID)
+	}
+
+	e.audit.LogAsync(audit.AuditEntry{
+		UserID:       &physicianUUID,
+		UserRole:     "physician",
+		ResourceType: "Consent",
+		ResourceID:   consentID,
+		Action:       "accept",
+		Success:      true,
+		StatusCode:   200,
+	})
+
+	return nil
+}
+
+// DeclineConsent allows a physician to decline a pending consent request.
+func (e *consentEngine) DeclineConsent(ctx context.Context, consentID string, physicianUserID string, reason string) error {
+	consentUUID, err := uuid.Parse(consentID)
+	if err != nil {
+		return fmt.Errorf("invalid consent ID: %w", err)
+	}
+	physicianUUID, err := uuid.Parse(physicianUserID)
+	if err != nil {
+		return fmt.Errorf("invalid physician ID: %w", err)
+	}
+
+	consent, err := e.repo.GetByID(ctx, consentUUID)
+	if err != nil {
+		return err
+	}
+	if consent == nil {
+		return ErrConsentNotFound
+	}
+	if consent.ProviderID != physicianUUID {
+		return fmt.Errorf("%w: only the requested physician can decline this consent", ErrUnauthorizedAction)
+	}
+	if consent.Status != "pending" {
+		return ErrNotPending
+	}
+
+	if err := e.repo.UpdateStatus(ctx, consentUUID, "rejected"); err != nil {
+		return err
+	}
+
+	e.audit.LogAsync(audit.AuditEntry{
+		UserID:       &physicianUUID,
+		UserRole:     "physician",
+		ResourceType: "Consent",
+		ResourceID:   consentID,
+		Action:       "decline",
+		Success:      true,
+		StatusCode:   200,
+	})
+
+	return nil
+}
+
+// GetPendingRequests returns pending consent requests for a physician.
+func (e *consentEngine) GetPendingRequests(ctx context.Context, physicianUserID string) ([]*ConsentedPatient, error) {
+	uid, err := uuid.Parse(physicianUserID)
+	if err != nil {
+		return nil, err
+	}
+	return e.repo.GetPendingRequests(ctx, uid)
+}
+
 // GetConsentByID retrieves a consent record by its UUID.
 func (e *consentEngine) GetConsentByID(ctx context.Context, consentID uuid.UUID) (*Consent, error) {
 	return e.repo.GetByID(ctx, consentID)
+}
+
+// GetAccessLog returns audit log entries for a patient's resources.
+func (e *consentEngine) GetAccessLog(ctx context.Context, patientFHIRID string) ([]AccessLogEntry, error) {
+	if e.db == nil {
+		return []AccessLogEntry{}, nil
+	}
+
+	var entries []AccessLogEntry
+	query := `SELECT a.id, COALESCE(a.user_id::text, '') as user_id,
+	                 COALESCE(u.full_name, a.user_role) as accessor_name,
+	                 a.action, a.resource_type, COALESCE(a.resource_id, '') as resource_id,
+	                 a.created_at
+	          FROM audit_logs a
+	          LEFT JOIN users u ON a.user_id = u.id
+	          WHERE a.patient_ref = $1 AND a.success = true
+	          ORDER BY a.created_at DESC
+	          LIMIT 100`
+	err := e.db.SelectContext(ctx, &entries, query, "Patient/"+patientFHIRID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get access log: %w", err)
+	}
+	if entries == nil {
+		entries = []AccessLogEntry{}
+	}
+	return entries, nil
+}
+
+// GetUserDisplayName returns the display name for a user, or empty string on failure.
+func (e *consentEngine) GetUserDisplayName(ctx context.Context, userID uuid.UUID) string {
+	if e.users != nil {
+		_, name, err := e.users.GetUserContactInfo(ctx, userID)
+		if err == nil && name != "" {
+			return name
+		}
+	}
+	if e.db != nil {
+		var name string
+		if err := e.db.GetContext(ctx, &name, "SELECT COALESCE(full_name, '') FROM users WHERE id = $1", userID); err == nil {
+			return name
+		}
+	}
+	return ""
 }

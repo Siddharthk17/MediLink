@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { fhirAPI, getCodeDisplay } from '@medilink/shared'
+import type { CodeableConcept } from '@medilink/shared'
 import { Badge } from '@/components/ui/Badge'
 import { Shield } from 'lucide-react'
 
@@ -16,6 +17,7 @@ export function AllergyList({ patientId }: AllergyListProps) {
       const res = await fhirAPI.searchResources('AllergyIntolerance', { patient: `Patient/${patientId}` })
       return res.data
     },
+    refetchInterval: 120_000,
   })
 
   const allergies = data?.entry?.map((e) => e.resource) || []
@@ -25,7 +27,7 @@ export function AllergyList({ patientId }: AllergyListProps) {
   return (
     <div className="flex flex-wrap gap-2">
       {allergies.map((allergy) => {
-        const name = getCodeDisplay((allergy as any).code as any)
+        const name = getCodeDisplay((allergy as { code?: CodeableConcept }).code)
         const criticality = (allergy as { criticality?: string }).criticality
         return (
           <Badge

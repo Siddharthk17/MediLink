@@ -25,13 +25,16 @@ services:
       redis:
         condition: service_healthy
       elasticsearch:
-        condition: service_healthy
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
       interval: 5s
       timeout: 3s
-      retries: 10
-      start_period: 10s
+      retries: 15
+      start_period: 30s
+    stop_grace_period: 5s
     restart: unless-stopped
 
   migrate:
@@ -69,6 +72,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    stop_grace_period: 5s
     restart: unless-stopped
 
   postgres:
@@ -113,8 +117,10 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
       interval: 10s
-      timeout: 5s
-      retries: 10
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+    stop_grace_period: 5s
 
   minio:
     image: minio/minio:latest
@@ -143,6 +149,11 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   grafana:
     image: grafana/grafana:latest
@@ -157,7 +168,14 @@ services:
     ports:
       - "3150:3000"
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   asynqmon:
     image: hibiken/asynqmon:latest
@@ -166,7 +184,8 @@ services:
     environment:
       - REDIS_ADDR=redis:6379
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
 
   minio-init:
     image: minio/mc:latest
@@ -176,7 +195,7 @@ services:
     entrypoint: >
       /bin/sh -c "
       /usr/bin/mc alias set myminio http://minio:9000 MediLink MediLink_minio_dev;
-      /usr/bin/mc mb myminio/medilink-lab-reports;
+      /usr/bin/mc mb --ignore-existing myminio/medilink-lab-reports;
       /usr/bin/mc anonymous set private myminio/medilink-lab-reports;
       exit 0;
       "
@@ -191,6 +210,60 @@ services:
     depends_on:
       api:
         condition: service_healthy
+      physician-dashboard:
+        condition: service_healthy
+      patient-dashboard:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    stop_grace_period: 3s
+
+  physician-dashboard:
+    build:
+      context: .
+      dockerfile: frontend/physician-dashboard/Dockerfile
+    environment:
+      - NEXT_PUBLIC_API_URL=http://api:8080
+      - NEXT_PUBLIC_PATIENT_PORTAL_URL=/patient
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    stop_grace_period: 5s
+    restart: unless-stopped
+
+  patient-dashboard:
+    build:
+      context: .
+      dockerfile: frontend/patient-dashboard/Dockerfile
+    environment:
+      - NEXT_PUBLIC_API_URL=http://api:8080
+      - NEXT_PUBLIC_PHYSICIAN_PORTAL_URL=/
+      - NEXT_PUBLIC_BASE_PATH=/patient
+      - PORT=3002
+      - HOSTNAME=0.0.0.0
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/patient/login || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    stop_grace_period: 5s
+    restart: unless-stopped
 
 volumes:
   postgres_data:

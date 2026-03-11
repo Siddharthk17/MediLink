@@ -25,6 +25,7 @@ export default function ConsentsPage() {
       const res = await consentAPI.getMyPatients()
       return res.data
     },
+    refetchInterval: 30_000,
   })
 
   const revokeMutation = useMutation({

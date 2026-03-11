@@ -54,10 +54,27 @@ func TestCORSMiddleware_Preflight(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("OPTIONS", "/test", nil)
+	req.Header.Set("Origin", "http://localhost:3000")
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, 204, w.Code)
-	assert.Equal(t, "*", w.Header().Get("Access-Control-Allow-Origin"))
+	assert.Equal(t, "http://localhost:3000", w.Header().Get("Access-Control-Allow-Origin"))
+	assert.Equal(t, "true", w.Header().Get("Access-Control-Allow-Credentials"))
+}
+
+func TestCORSMiddleware_UnknownOriginDenied(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.CORSMiddleware())
+	router.GET("/test", func(c *gin.Context) { c.String(200, "ok") })
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/test", nil)
+	req.Header.Set("Origin", "http://evil.com")
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, 200, w.Code)
+	assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"), "unknown origin should not get ACAO header")
 }
 
 func TestSecurityHeadersMiddleware(t *testing.T) {

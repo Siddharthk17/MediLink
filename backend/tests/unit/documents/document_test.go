@@ -157,6 +157,14 @@ func (r *mockJobRepo) ListByPatient(_ context.Context, _ string, _ string, _, _ 
 	return r.listResult, r.listTotal, nil
 }
 
+func (r *mockJobRepo) ListByUploader(_ context.Context, _ uuid.UUID, _ string, _, _ int) ([]*documents.DocumentJob, int, error) {
+	r.record("ListByUploader")
+	if r.listErr != nil {
+		return nil, 0, r.listErr
+	}
+	return r.listResult, r.listTotal, nil
+}
+
 func (r *mockJobRepo) Delete(_ context.Context, id uuid.UUID) error {
 	r.record("Delete")
 	if r.deleteErr != nil {
@@ -211,6 +219,10 @@ func (s *mockStorageClient) DeleteFile(_ context.Context, _, _ string) error {
 }
 
 func (s *mockStorageClient) Health(_ context.Context) bool { return true }
+func (s *mockStorageClient) DownloadFile(_ context.Context, _, _ string) ([]byte, error) {
+	s.record("DownloadFile")
+	return []byte("mock file content"), nil
+}
 func (s *mockStorageClient) UploadWithKey(_ context.Context, _, _ string, _ io.Reader, _ string, _ int64) error {
 	return nil
 }
@@ -856,7 +868,7 @@ func TestListJobs_200_Paginated(t *testing.T) {
 	}
 }
 
-func TestListJobs_400_NoPatientID_Physician(t *testing.T) {
+func TestListJobs_200_NoPatientID_Physician_ListsOwnUploads(t *testing.T) {
 	client, mr := newAsynqClient(t)
 	defer mr.Close()
 	defer client.Close()
@@ -869,8 +881,9 @@ func TestListJobs_400_NoPatientID_Physician(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for physician without patientId, got %d", w.Code)
+	// Physicians without patientId get their own uploaded jobs (ListByUploader)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for physician without patientId (lists own uploads), got %d", w.Code)
 	}
 }
 
@@ -1623,6 +1636,9 @@ func (s *trackingStorageClient) DeleteFile(ctx context.Context, b, k string) err
 	return s.inner.DeleteFile(ctx, b, k)
 }
 func (s *trackingStorageClient) Health(ctx context.Context) bool { return true }
+func (s *trackingStorageClient) DownloadFile(ctx context.Context, b, k string) ([]byte, error) {
+	return s.inner.DownloadFile(ctx, b, k)
+}
 func (s *trackingStorageClient) UploadWithKey(_ context.Context, _, _ string, _ io.Reader, _ string, _ int64) error {
 	return nil
 }
@@ -1653,6 +1669,9 @@ func (r *trackingJobRepo) UpdateAsynqTaskID(ctx context.Context, id uuid.UUID, t
 }
 func (r *trackingJobRepo) ListByPatient(ctx context.Context, p, s string, c, o int) ([]*documents.DocumentJob, int, error) {
 	return r.inner.ListByPatient(ctx, p, s, c, o)
+}
+func (r *trackingJobRepo) ListByUploader(ctx context.Context, uid uuid.UUID, s string, c, o int) ([]*documents.DocumentJob, int, error) {
+	return r.inner.ListByUploader(ctx, uid, s, c, o)
 }
 func (r *trackingJobRepo) Delete(ctx context.Context, id uuid.UUID) error {
 	return r.inner.Delete(ctx, id)

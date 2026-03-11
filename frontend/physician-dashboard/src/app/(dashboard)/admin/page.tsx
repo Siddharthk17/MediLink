@@ -21,6 +21,7 @@ export default function AdminPage() {
       return res.data
     },
     enabled: user?.role === 'admin',
+    refetchInterval: 120_000,
   })
 
   if (user && user.role !== 'admin') {

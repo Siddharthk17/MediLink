@@ -8,6 +8,7 @@ import (
 
 	"github.com/Siddharthk17/MediLink/internal/consent"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 )
@@ -50,6 +51,30 @@ func (m *mockConsentEngine) RecordBreakGlass(_ context.Context, _ consent.BreakG
 }
 
 func (m *mockConsentEngine) InvalidateCache(_ context.Context, _, _ string) {}
+
+func (m *mockConsentEngine) AcceptConsent(_ context.Context, _, _ string) error {
+	return nil
+}
+
+func (m *mockConsentEngine) DeclineConsent(_ context.Context, _, _, _ string) error {
+	return nil
+}
+
+func (m *mockConsentEngine) GetPendingRequests(_ context.Context, _ string) ([]*consent.ConsentedPatient, error) {
+	return nil, nil
+}
+
+func (m *mockConsentEngine) GetConsentByID(_ context.Context, _ uuid.UUID) (*consent.Consent, error) {
+	return nil, nil
+}
+
+func (m *mockConsentEngine) GetAccessLog(_ context.Context, _ string) ([]consent.AccessLogEntry, error) {
+	return []consent.AccessLogEntry{}, nil
+}
+
+func (m *mockConsentEngine) GetUserDisplayName(_ context.Context, _ uuid.UUID) string {
+	return ""
+}
 
 func (m *mockConsentEngine) GetPatientFHIRID(ctx context.Context, userID string) (string, error) {
 	if m.getPatientFHIRIDFn != nil {

@@ -23,8 +23,10 @@ export function useDocumentJobs(patientFhirId: string) {
           clearInterval(intervalRef.current)
           intervalRef.current = null
         }
-      } catch {
-        // silently continue polling
+      } catch (err) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('Document job polling failed:', err)
+        }
       }
     }, POLL_INTERVAL_MS)
   }, [patientFhirId])

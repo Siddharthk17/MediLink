@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { consentAPI } from '@medilink/shared'
 import type { ConsentedPatient } from '@medilink/shared'
@@ -9,6 +9,7 @@ import { PageWrapper } from '@/components/layout/PageWrapper'
 import { PatientSearch } from '@/components/patients/PatientSearch'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Table, TableHeader, TableHead, TableBody, TableRow, TableCell } from '@/components/ui/Table'
+import toast from 'react-hot-toast'
 
 const FILTERS = ['All', 'Active consent', 'Expiring (≤7d)', 'Revoked']
 
@@ -33,6 +34,7 @@ const statusDot: Record<string, string> = {
 export default function PatientsPage() {
   const [search, setSearch] = useState('')
   const [activeFilter, setActiveFilter] = useState('All')
+  const queryClient = useQueryClient()
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['consent', 'my-patients'],
@@ -40,7 +42,43 @@ export default function PatientsPage() {
       const res = await consentAPI.getMyPatients()
       return res.data.patients
     },
+    refetchInterval: 30_000,
   })
+
+  const { data: pendingData } = useQuery({
+    queryKey: ['consent', 'pending-requests'],
+    queryFn: async () => {
+      const res = await consentAPI.getPendingRequests()
+      return res.data.requests
+    },
+    refetchInterval: 15_000,
+  })
+
+  const acceptMutation = useMutation({
+    mutationFn: (consentId: string) => consentAPI.acceptConsent(consentId),
+    onSuccess: () => {
+      toast.success('Patient request accepted')
+      queryClient.invalidateQueries({ queryKey: ['consent'] })
+      queryClient.invalidateQueries({ queryKey: ['consents'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['sidebar'] })
+    },
+    onError: () => toast.error('Failed to accept request'),
+  })
+
+  const declineMutation = useMutation({
+    mutationFn: (consentId: string) => consentAPI.declineConsent(consentId),
+    onSuccess: () => {
+      toast.success('Patient request declined')
+      queryClient.invalidateQueries({ queryKey: ['consent'] })
+      queryClient.invalidateQueries({ queryKey: ['consents'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['sidebar'] })
+    },
+    onError: () => toast.error('Failed to decline request'),
+  })
+
+  const pendingRequests = pendingData || []
 
   const patients = useMemo(() => data || [], [data])
 
@@ -54,6 +92,56 @@ export default function PatientsPage() {
 
   return (
     <PageWrapper title="Patients" subtitle={`${filtered.length} patients with active consent`}>
+      {pendingRequests.length > 0 && (
+        <div className="mb-8 glass-card rounded-card border border-[var(--color-warning)] border-opacity-30 overflow-hidden" style={{ background: 'color-mix(in srgb, var(--color-warning) 5%, var(--color-bg-surface))' }}>
+          <div className="px-5 py-3 border-b border-[var(--color-border-subtle)] flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full animate-pulse" style={{ background: 'var(--color-warning)' }} />
+            <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+              Pending Requests ({pendingRequests.length})
+            </h3>
+          </div>
+          <div className="divide-y divide-[var(--color-border-subtle)]">
+            {pendingRequests.map((req: ConsentedPatient) => {
+              const age = req.patient.birthDate
+                ? new Date().getFullYear() - parseInt(req.patient.birthDate.slice(0, 4), 10)
+                : null
+              return (
+                <div key={req.consent.id} className="flex items-center justify-between px-5 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-[var(--color-text-primary)]">
+                      {req.patient.fullName || 'Unknown Patient'}
+                    </p>
+                    <p className="text-xs text-[var(--color-text-muted)]">
+                      {[req.patient.gender, age ? `${age}y` : null].filter(Boolean).join(' · ')}
+                      {' · Requested '}
+                      {new Date(req.consent.grantedAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => acceptMutation.mutate(req.consent.id)}
+                      disabled={acceptMutation.isPending || declineMutation.isPending}
+                      className="px-3 py-1.5 text-xs font-medium rounded-lg transition-colors"
+                      style={{ background: 'var(--color-success)', color: 'white' }}
+                    >
+                      Accept
+                    </button>
+                    <button
+                      onClick={() => declineMutation.mutate(req.consent.id)}
+                      disabled={acceptMutation.isPending || declineMutation.isPending}
+                      className="px-3 py-1.5 text-xs font-medium rounded-lg transition-colors border"
+                      style={{ borderColor: 'var(--color-danger)', color: 'var(--color-danger)' }}
+                    >
+                      Decline
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       <PatientSearch
         onSearch={setSearch}
         total={patients.length}

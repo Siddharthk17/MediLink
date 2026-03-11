@@ -47,6 +47,7 @@ export default function DashboardPage() {
       const res = await consentAPI.getMyPatients()
       return res.data
     },
+    refetchInterval: 30_000,
   })
 
   const { data: docsData } = useQuery({
@@ -55,6 +56,7 @@ export default function DashboardPage() {
       const res = await apiClient.get<{ jobs: Array<{ jobId: string; status: string }>; total: number }>('/documents/jobs')
       return res.data
     },
+    refetchInterval: 60_000,
   })
 
   const patients: ConsentedPatient[] = patientsData?.patients || []

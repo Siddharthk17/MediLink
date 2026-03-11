@@ -34,6 +34,15 @@ type UserSummary struct {
 	TOTPEnabled   bool       `json:"totpEnabled" db:"totp_enabled"`
 }
 
+// DoctorSummary is a public-facing doctor profile for the directory.
+type DoctorSummary struct {
+	ID             string `json:"id" db:"id"`
+	FullName       string `json:"fullName"`
+	FullNameEnc    []byte `json:"-" db:"full_name_enc"`
+	Specialization string `json:"specialization" db:"specialization"`
+	MciNumber      string `json:"mciNumber,omitempty" db:"mci_number"`
+}
+
 // UserDetail extends UserSummary with additional fields for single-user view.
 type UserDetail struct {
 	UserSummary
@@ -264,6 +273,31 @@ func (r *AdminRepository) ReinstatePhysician(ctx context.Context, userID string)
 		return fmt.Errorf("user not found")
 	}
 	return nil
+}
+
+// ListDoctors returns active physicians for the public doctor directory.
+func (r *AdminRepository) ListDoctors(ctx context.Context, specialization string) ([]DoctorSummary, error) {
+	var conditions []string
+	var args []interface{}
+	argIdx := 1
+
+	conditions = append(conditions, "role = 'physician'", "status = 'active'", "deleted_at IS NULL")
+
+	if specialization != "" {
+		conditions = append(conditions, fmt.Sprintf("LOWER(specialization) = LOWER($%d)", argIdx))
+		args = append(args, specialization)
+		argIdx++
+	}
+	_ = argIdx
+
+	where := "WHERE " + strings.Join(conditions, " AND ")
+	query := fmt.Sprintf("SELECT id, full_name_enc, COALESCE(specialization, '') as specialization, COALESCE(mci_number, '') as mci_number FROM users %s ORDER BY created_at ASC", where)
+
+	var doctors []DoctorSummary
+	if err := r.db.SelectContext(ctx, &doctors, query, args...); err != nil {
+		return nil, fmt.Errorf("failed to list doctors: %w", err)
+	}
+	return doctors, nil
 }
 
 const auditLogColumns = `a.id, a.user_id, a.user_role, COALESCE(u.email, '') as user_email,

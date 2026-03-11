@@ -162,7 +162,15 @@ func (h *DocumentHandler) UploadDocument(c *gin.Context) {
 	}
 
 	// Step 7: Queue Asynq task
-	payload, _ := json.Marshal(ProcessDocumentPayload{JobID: job.ID.String()})
+	payload, err := json.Marshal(ProcessDocumentPayload{JobID: job.ID.String()})
+	if err != nil {
+		h.logger.Error().Err(err).Msg("failed to marshal document task payload")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"resourceType": "OperationOutcome",
+			"issue": []gin.H{{"severity": "error", "code": "exception", "diagnostics": "Failed to queue processing"}},
+		})
+		return
+	}
 	task := asynq.NewTask(TaskProcessDocument, payload)
 	taskInfo, err := h.asynqClient.Enqueue(task,
 		asynq.Queue("documents"),

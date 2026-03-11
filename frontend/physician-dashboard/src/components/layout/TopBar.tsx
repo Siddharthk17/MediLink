@@ -161,6 +161,15 @@ export function TopBar() {
                   </Link>
                 )}
 
+                <Link
+                  href="/profile"
+                  onClick={() => setUserMenuOpen(false)}
+                  className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] transition-colors"
+                >
+                  <User size={15} />
+                  My Profile
+                </Link>
+
                 <button
                   onClick={handleLogout}
                   className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-[var(--color-danger)] hover:bg-[var(--color-bg-hover)] transition-colors"
