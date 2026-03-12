@@ -749,3 +749,234 @@ func TestConsentScope_Limited(t *testing.T) {
 		assert.True(t, granted, "Patient resource should always be allowed with any active consent")
 	})
 }
+
+// 14. TestAcceptConsent_200
+
+func TestAcceptConsent_200(t *testing.T) {
+	repo := newMockRepo()
+	cache := setupCache(t)
+	patientID := uuid.New()
+	providerID := uuid.New()
+	fhirID := uuid.New().String()
+
+	repo.knownProviders[providerID] = true
+	repo.addPatient(patientID, fhirID)
+
+	engine, auditLog := newTestEngine(repo, cache)
+	ctx := context.Background()
+
+	// Grant creates a pending consent
+	grantReq := consent.GrantConsentRequest{
+		ProviderUserID: providerID.String(),
+		Scope:          []string{"*"},
+		Purpose:        "treatment",
+	}
+	created, err := engine.GrantConsent(ctx, grantReq, patientID.String())
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	assert.Equal(t, "pending", created.Status)
+
+	// Physician accepts the consent
+	err = engine.AcceptConsent(ctx, created.ID.String(), providerID.String())
+	require.NoError(t, err)
+
+	// After accept — verify status changed in repo
+	accepted, err := repo.GetByID(ctx, created.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "active", accepted.Status)
+
+	// After accept — consent check should return true
+	granted, err := engine.CheckConsent(ctx, providerID.String(), fhirID, "Observation")
+	require.NoError(t, err)
+	assert.True(t, granted, "accepted consent should grant access")
+
+	// Verify audit trail contains accept action
+	entries := auditLog.entries()
+	var found bool
+	for _, e := range entries {
+		if e.Action == "accept" && e.StatusCode == 200 {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "audit log should contain an accept entry")
+}
+
+// 15. TestAcceptConsent_403_WrongPhysician
+
+func TestAcceptConsent_403_WrongPhysician(t *testing.T) {
+	repo := newMockRepo()
+	patientID := uuid.New()
+	providerID := uuid.New()
+	wrongPhysicianID := uuid.New()
+	fhirID := uuid.New().String()
+
+	repo.knownProviders[providerID] = true
+	repo.addPatient(patientID, fhirID)
+
+	engine, _ := newTestEngine(repo, nil)
+	ctx := context.Background()
+
+	grantReq := consent.GrantConsentRequest{
+		ProviderUserID: providerID.String(),
+		Scope:          []string{"*"},
+	}
+	created, err := engine.GrantConsent(ctx, grantReq, patientID.String())
+	require.NoError(t, err)
+
+	// Wrong physician tries to accept
+	err = engine.AcceptConsent(ctx, created.ID.String(), wrongPhysicianID.String())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "only the requested physician")
+}
+
+// 16. TestAcceptConsent_400_AlreadyActive
+
+func TestAcceptConsent_400_AlreadyActive(t *testing.T) {
+	repo := newMockRepo()
+	patientID := uuid.New()
+	providerID := uuid.New()
+	fhirID := uuid.New().String()
+
+	repo.knownProviders[providerID] = true
+	repo.addPatient(patientID, fhirID)
+
+	engine, _ := newTestEngine(repo, nil)
+	ctx := context.Background()
+
+	grantReq := consent.GrantConsentRequest{
+		ProviderUserID: providerID.String(),
+		Scope:          []string{"*"},
+	}
+	created, err := engine.GrantConsent(ctx, grantReq, patientID.String())
+	require.NoError(t, err)
+
+	// Accept once
+	err = engine.AcceptConsent(ctx, created.ID.String(), providerID.String())
+	require.NoError(t, err)
+
+	// Try to accept again — should fail because status is no longer pending
+	err = engine.AcceptConsent(ctx, created.ID.String(), providerID.String())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not in pending")
+}
+
+// 17. TestDeclineConsent_200
+
+func TestDeclineConsent_200(t *testing.T) {
+	repo := newMockRepo()
+	patientID := uuid.New()
+	providerID := uuid.New()
+	fhirID := uuid.New().String()
+
+	repo.knownProviders[providerID] = true
+	repo.addPatient(patientID, fhirID)
+
+	engine, auditLog := newTestEngine(repo, nil)
+	ctx := context.Background()
+
+	grantReq := consent.GrantConsentRequest{
+		ProviderUserID: providerID.String(),
+		Scope:          []string{"*"},
+	}
+	created, err := engine.GrantConsent(ctx, grantReq, patientID.String())
+	require.NoError(t, err)
+
+	// Physician declines the consent
+	err = engine.DeclineConsent(ctx, created.ID.String(), providerID.String(), "Not my patient")
+	require.NoError(t, err)
+
+	// Verify status changed to rejected
+	declined, err := repo.GetByID(ctx, created.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "rejected", declined.Status)
+
+	// Verify audit trail
+	entries := auditLog.entries()
+	var found bool
+	for _, e := range entries {
+		if e.Action == "decline" && e.StatusCode == 200 {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "audit log should contain a decline entry")
+}
+
+// 18. TestDeclineConsent_403_WrongPhysician
+
+func TestDeclineConsent_403_WrongPhysician(t *testing.T) {
+	repo := newMockRepo()
+	patientID := uuid.New()
+	providerID := uuid.New()
+	wrongPhysicianID := uuid.New()
+	fhirID := uuid.New().String()
+
+	repo.knownProviders[providerID] = true
+	repo.addPatient(patientID, fhirID)
+
+	engine, _ := newTestEngine(repo, nil)
+	ctx := context.Background()
+
+	grantReq := consent.GrantConsentRequest{
+		ProviderUserID: providerID.String(),
+		Scope:          []string{"*"},
+	}
+	created, err := engine.GrantConsent(ctx, grantReq, patientID.String())
+	require.NoError(t, err)
+
+	// Wrong physician tries to decline
+	err = engine.DeclineConsent(ctx, created.ID.String(), wrongPhysicianID.String(), "Not mine")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "only the requested physician")
+}
+
+// 19. TestConsentNotFound
+
+func TestConsentNotFound(t *testing.T) {
+	repo := newMockRepo()
+	engine, _ := newTestEngine(repo, nil)
+	ctx := context.Background()
+
+	err := engine.AcceptConsent(ctx, uuid.New().String(), uuid.New().String())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "consent not found")
+
+	err = engine.DeclineConsent(ctx, uuid.New().String(), uuid.New().String(), "reason")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "consent not found")
+
+	err = engine.RevokeConsent(ctx, uuid.New().String(), uuid.New().String(), "patient")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "consent not found")
+}
+
+// 20. TestRevokeConsent_Idempotent
+
+func TestRevokeConsent_Idempotent(t *testing.T) {
+	repo := newMockRepo()
+	patientID := uuid.New()
+	providerID := uuid.New()
+	fhirID := uuid.New().String()
+
+	repo.knownProviders[providerID] = true
+	repo.addPatient(patientID, fhirID)
+
+	engine, _ := newTestEngine(repo, nil)
+	ctx := context.Background()
+
+	grantReq := consent.GrantConsentRequest{
+		ProviderUserID: providerID.String(),
+		Scope:          []string{"*"},
+	}
+	c, err := engine.GrantConsent(ctx, grantReq, patientID.String())
+	require.NoError(t, err)
+
+	// First revoke
+	err = engine.RevokeConsent(ctx, c.ID.String(), patientID.String(), "patient")
+	require.NoError(t, err)
+
+	// Second revoke should be idempotent (no error)
+	err = engine.RevokeConsent(ctx, c.ID.String(), patientID.String(), "patient")
+	require.NoError(t, err, "revoking an already-revoked consent should be idempotent")
+}
